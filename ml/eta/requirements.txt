@@ -1,0 +1,55 @@
+# NXTBus ETA Prediction Service — Python Dependencies
+# =====================================================
+# Python 3.11 required.
+#
+# Install: pip install -r requirements.txt
+#
+# All versions are pinned to minor version for reproducibility.
+# Update with care — XGBoost model serialisation format can change between major versions.
+
+# --- API Framework ---
+fastapi==0.111.0
+uvicorn[standard]==0.30.0
+httpx==0.27.0                   # For FastAPI TestClient in tests
+
+# --- Async Database ---
+sqlalchemy==2.0.30
+asyncpg==0.29.0                 # Async PostgreSQL driver for SQLAlchemy 2.x
+
+# --- Async Redis ---
+redis==5.0.4                    # redis-py 5.x with asyncio mode (redis.asyncio)
+
+# --- Data Processing ---
+pandas==2.2.2
+numpy==1.26.4
+
+# --- ML ---
+xgboost==2.0.3
+scikit-learn==1.4.2             # LabelEncoder, StandardScaler, metrics
+
+# --- Hyperparameter Optimisation ---
+optuna==3.6.1
+
+# --- Model Explainability ---
+shap==0.45.0
+matplotlib==3.9.0               # Required by shap for plots
+
+# --- Config Management ---
+pydantic==2.7.1
+pydantic-settings==2.2.1
+
+# --- Serialisation ---
+joblib==1.4.2                   # For model.pkl save/load
+
+# --- Distance Calculation ---
+geopy==2.4.1                    # Geodesic Haversine (do not use from-scratch impl)
+
+# --- Experiment Tracking ---
+mlflow==2.13.0
+
+# --- Testing ---
+pytest==8.2.0
+pytest-asyncio==0.23.7
+
+# --- Utilities ---
+seaborn==0.13.2                 # Notebooks only (correlation heatmaps)

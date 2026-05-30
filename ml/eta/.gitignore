@@ -1,0 +1,49 @@
+# NXTBus ML/ETA — gitignore
+
+# Environment
+.env
+*.env.local
+
+# Model artifacts (populated by train.py, downloaded from Colab)
+models/
+!models/.gitkeep
+
+# MLflow experiment tracking
+mlruns/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+
+# Notebooks
+.ipynb_checkpoints/
+notebooks/.ipynb_checkpoints/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
