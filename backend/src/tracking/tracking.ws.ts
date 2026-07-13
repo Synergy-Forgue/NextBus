@@ -1,0 +1,265 @@
+import { WebSocketServer, WebSocket } from 'ws';
+import { IncomingMessage } from 'http';
+import { Server } from 'http';
+import { pool } from '../db/pool';
+import { TelemetryPayload, LiveBusState, RouteStop } from '../types';
+import { updateBusState, getAllBusStates, getBusState, removeBusState } from './liveState';
+import { getRouteStopsForTrip, calculateStopEtas } from './eta.service';
+import { haversineKm } from '../utils/haversine';
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+// Distance threshold in km within which we consider a bus to have "arrived" at a stop
+const STOP_ARRIVAL_THRESHOLD_KM = 0.15; // 150 metres
+
+// ─── Subscriber Registry ──────────────────────────────────────────────────────
+// Commuter clients subscribe to a specific route_id to receive live updates.
+const subscribers = new Map<WebSocket, number | 'all'>(); // client → route_id | 'all'
+
+// ─── Route Stops Cache ────────────────────────────────────────────────────────
+// Loaded from DB once per route_id. Avoids a DB query on every telemetry tick.
+const routeStopsCache = new Map<number, RouteStop[]>();
+
+async function getCachedRouteStops(trip_id: number): Promise<RouteStop[]> {
+  // First check if we already have this trip's stops cached
+  for (const [cachedRouteId, stops] of routeStopsCache) {
+    const state = [...getAllBusStates()].find(b => b.trip_id === trip_id);
+    if (state && state.route_id === cachedRouteId) return stops;
+  }
+  // Load from DB and cache by route_id
+  const stops = await getRouteStopsForTrip(trip_id);
+  const state = getAllBusStates().find(b => b.trip_id === trip_id);
+  if (state) routeStopsCache.set(state.route_id, stops);
+  return stops;
+}
+
+// ─── Stop Advancement Logic ───────────────────────────────────────────────────
+/**
+ * Determines the next stop index a bus should be heading towards.
+ * Advances the index when the bus comes within STOP_ARRIVAL_THRESHOLD_KM of the current target stop.
+ */
+function computeNextStopIndex(
+  currentIndex: number,
+  stops:        RouteStop[],
+  busLat:       number,
+  busLon:       number
+): number {
+  if (!stops.length || currentIndex >= stops.length) return currentIndex;
+  const targetStop = stops[currentIndex];
+  const dist = haversineKm(busLat, busLon, targetStop.latitude, targetStop.longitude);
+  if (dist < STOP_ARRIVAL_THRESHOLD_KM && currentIndex < stops.length - 1) {
+    return currentIndex + 1;
+  }
+  return currentIndex;
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+function send(ws: WebSocket, data: object): void {
+  if (ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(data));
+  }
+}
+
+function parseMessage<T>(raw: string): T | null {
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
+// ─── Persist Telemetry to DB ──────────────────────────────────────────────────
+async function persistTelemetry(payload: TelemetryPayload): Promise<void> {
+  await pool.query(
+    `INSERT INTO telemetry_logs
+       (trip_id, latitude, longitude, speed, occupancy_count, vision_confidence_score, recorded_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [
+      payload.trip_id,
+      payload.latitude,
+      payload.longitude,
+      payload.speed,
+      payload.occupancy_count,
+      payload.vision_confidence_score,
+      payload.recorded_at,
+    ]
+  );
+}
+
+// ─── Broadcast to Subscribers ─────────────────────────────────────────────────
+async function broadcastUpdate(state: LiveBusState, stops: RouteStop[]): Promise<void> {
+  const stopEtas = calculateStopEtas(
+    stops,
+    state.nextStopIndex,
+    state.latitude,
+    state.longitude,
+    state.speed
+  );
+
+  const message = {
+    type: 'BUS_UPDATE',
+    data: { ...state, stop_etas: stopEtas },
+  };
+
+  subscribers.forEach((routeFilter, client) => {
+    if (
+      client.readyState === WebSocket.OPEN &&
+      (routeFilter === 'all' || routeFilter === state.route_id)
+    ) {
+      send(client, message);
+    }
+  });
+}
+
+// ─── Fetch trip meta from DB ──────────────────────────────────────────────────
+async function getTripMeta(
+  trip_id: number
+): Promise<{ bus_id: number; route_id: number; license_plate: string } | null> {
+  const result = await pool.query(
+    `SELECT t.bus_id, t.route_id, b.license_plate
+     FROM trips t JOIN buses b ON b.id = t.bus_id
+     WHERE t.id = $1 AND t.status = 'active'`,
+    [trip_id]
+  );
+  return result.rowCount ? result.rows[0] : null;
+}
+
+// ─── WebSocket Server Setup ───────────────────────────────────────────────────
+export function attachWebSocketServer(httpServer: Server): void {
+  const wss = new WebSocketServer({ server: httpServer });
+
+  console.log('🔌 WebSocket server attached.');
+
+  wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
+    const url = req.url || '';
+
+    // ── PUBLISHER channel ── (Driver App / GPS Simulator)
+    if (url.startsWith('/ws/publish')) {
+      console.log('[WS] Publisher connected');
+      let publisherTripId: number | null = null;
+
+      ws.on('message', async (raw) => {
+        const payload = parseMessage<TelemetryPayload>(raw.toString());
+        if (!payload) {
+          send(ws, { type: 'ERROR', message: 'Invalid JSON payload.' });
+          return;
+        }
+
+        const { trip_id, latitude, longitude, speed, occupancy_count, vision_confidence_score, recorded_at } = payload;
+
+        if (!trip_id || latitude == null || longitude == null) {
+          send(ws, { type: 'ERROR', message: 'trip_id, latitude, and longitude are required.' });
+          return;
+        }
+
+        // Fetch trip metadata (also validates the trip is still active)
+        const meta = await getTripMeta(trip_id);
+        if (!meta) {
+          send(ws, { type: 'ERROR', message: `No active trip found with id ${trip_id}.` });
+          return;
+        }
+
+        publisherTripId = trip_id;
+
+        // Load route stops (cached after first load)
+        let stops = routeStopsCache.get(meta.route_id);
+        if (!stops) {
+          stops = await getRouteStopsForTrip(trip_id);
+          routeStopsCache.set(meta.route_id, stops);
+        }
+
+        // Get or initialise nextStopIndex from previous state
+        const prevState = getBusState(trip_id);
+        const prevNextStopIndex = prevState?.nextStopIndex ?? 0;
+
+        // Advance the next stop index if the bus is close enough
+        const nextStopIndex = computeNextStopIndex(prevNextStopIndex, stops, latitude, longitude);
+
+        // Build the live state object
+        const liveState: LiveBusState = {
+          trip_id,
+          bus_id:                   meta.bus_id,
+          route_id:                 meta.route_id,
+          license_plate:            meta.license_plate,
+          latitude,
+          longitude,
+          speed:                    speed ?? 0,
+          occupancy_count:          occupancy_count ?? 0,
+          vision_confidence_score:  vision_confidence_score ?? 0,
+          last_updated:             new Date(recorded_at || Date.now()),
+          nextStopIndex,
+        };
+
+        // Update in-memory state
+        updateBusState(liveState);
+
+        // Persist to DB asynchronously (non-blocking)
+        persistTelemetry(payload).catch((err) =>
+          console.error('[DB] Telemetry persist error:', err.message)
+        );
+
+        // Broadcast to all subscribed commuter clients
+        broadcastUpdate(liveState, stops).catch((err) =>
+          console.error('[WS] Broadcast error:', err.message)
+        );
+
+        // ACK back to publisher
+        send(ws, { type: 'ACK', trip_id });
+      });
+
+      ws.on('close', () => {
+        console.log('[WS] Publisher disconnected');
+        // Remove the bus from the live fleet so the commuter app stops showing it
+        if (publisherTripId !== null) {
+          removeBusState(publisherTripId);
+          // Notify all subscribers that this bus went offline
+          subscribers.forEach((_, client) => {
+            send(client, { type: 'BUS_OFFLINE', trip_id: publisherTripId });
+          });
+        }
+      });
+    }
+
+    // ── SUBSCRIBER channel ── (Commuter App / React Native)
+    else if (url.startsWith('/ws/subscribe')) {
+      const routeParam = new URL(url, 'http://localhost').searchParams.get('route_id');
+      const routeFilter: number | 'all' = routeParam ? parseInt(routeParam) : 'all';
+
+      subscribers.set(ws, routeFilter);
+      console.log(`[WS] Subscriber connected (route_id: ${routeFilter})`);
+
+      // Immediately send a snapshot of all currently tracked buses on connect
+      const snapshot = getAllBusStates().filter(
+        (b) => routeFilter === 'all' || b.route_id === routeFilter
+      );
+      send(ws, { type: 'SNAPSHOT', data: snapshot });
+
+      ws.on('close', () => {
+        subscribers.delete(ws);
+        console.log('[WS] Subscriber disconnected');
+      });
+    }
+
+    // ── Unknown path ──
+    else {
+      send(ws, { type: 'ERROR', message: 'Unknown endpoint. Use /ws/publish or /ws/subscribe' });
+      ws.close();
+    }
+  });
+}
+
+// ─── Fleet Snapshot with ETAs (for REST endpoint) ─────────────────────────────
+export async function getFleetWithEtas(): Promise<object[]> {
+  const fleet = getAllBusStates();
+  const results = await Promise.all(
+    fleet.map(async (state) => {
+      const stops = routeStopsCache.get(state.route_id)
+        ?? await getRouteStopsForTrip(state.trip_id);
+      const stop_etas = calculateStopEtas(
+        stops, state.nextStopIndex,
+        state.latitude, state.longitude, state.speed
+      );
+      return { ...state, stop_etas };
+    })
+  );
+  return results;
+}
