@@ -1,4 +1,5 @@
 -- Drop tables if they exist (for clean setup)
+DROP TABLE IF EXISTS alerts CASCADE;
 DROP TABLE IF EXISTS telemetry_logs CASCADE;
 DROP TABLE IF EXISTS trips CASCADE;
 DROP TABLE IF EXISTS drivers CASCADE;
@@ -77,8 +78,24 @@ CREATE TABLE telemetry_logs (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Emergency Alerts (SOS and Breakdown reports from Commuter and Driver apps)
+CREATE TABLE alerts (
+    id SERIAL PRIMARY KEY,
+    type VARCHAR(50) NOT NULL,              -- 'sos' | 'breakdown'
+    description TEXT,
+    latitude DOUBLE PRECISION NOT NULL,
+    longitude DOUBLE PRECISION NOT NULL,
+    license_plate VARCHAR(50),
+    route_number VARCHAR(50),
+    driver_phone VARCHAR(20),
+    status VARCHAR(50) NOT NULL DEFAULT 'active', -- 'active' | 'resolved'
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    resolved_at TIMESTAMP WITH TIME ZONE
+);
+
 -- Indexes for performance
 CREATE INDEX idx_route_stops_route_id ON route_stops(route_id);
 CREATE INDEX idx_trips_status ON trips(status);
 CREATE INDEX idx_telemetry_trip_id ON telemetry_logs(trip_id);
 CREATE INDEX idx_telemetry_recorded_at ON telemetry_logs(recorded_at DESC);
+CREATE INDEX idx_alerts_status ON alerts(status);

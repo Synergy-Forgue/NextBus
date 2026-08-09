@@ -14,6 +14,7 @@ import stopsRouter   from './routers/stops.router';
 import busesRouter   from './routers/buses.router';
 import driversRouter from './routers/drivers.router';
 import tripsRouter   from './routers/trips.router';
+import alertsRouter  from './routers/alerts.router';
 
 const app = express();
 const server = http.createServer(app);
@@ -49,6 +50,7 @@ app.use('/api/stops',   stopsRouter);
 app.use('/api/buses',   busesRouter);
 app.use('/api/drivers', driversRouter);
 app.use('/api/trips',   tripsRouter);
+app.use('/api/alerts',  alertsRouter);
 
 // ─── Error Handling ──────────────────────────────────────────────────────────
 app.use(notFound);
@@ -64,8 +66,9 @@ server.listen(PORT, () => {
   console.log(`   Fleet:    GET  http://localhost:${PORT}/api/tracking/fleet`);
   console.log(`   Routes:   GET  http://localhost:${PORT}/api/routes`);
   console.log(`   Stops:    GET  http://localhost:${PORT}/api/stops`);
-  console.log(`   Buses:    GET  http://localhost:${PORT}/api/buses`);
+  console.log(`   Drivers:  GET  http://localhost:${PORT}/api/drivers`);
   console.log(`   Trips:    GET  http://localhost:${PORT}/api/trips`);
+  console.log(`   Alerts:   GET  http://localhost:${PORT}/api/alerts`);
   console.log(`   Publish:  WS   ws://localhost:${PORT}/ws/publish`);
   console.log(`   Subscribe:WS   ws://localhost:${PORT}/ws/subscribe?route_id=<id>\n`);
 });

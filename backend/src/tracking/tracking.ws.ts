@@ -59,6 +59,18 @@ function send(ws: WebSocket, data: object): void {
   }
 }
 
+/** Broadcast emergency alerts to all connected subscriber clients (RTC Dashboard) */
+export function broadcastAlert(alert: object): void {
+  const message = { type: 'ALERT', data: alert };
+  subscribers.forEach((_, client) => send(client, message));
+}
+
+/** Broadcast alert resolved status to all connected subscriber clients */
+export function broadcastAlertResolved(alert: object): void {
+  const message = { type: 'ALERT_RESOLVED', data: alert };
+  subscribers.forEach((_, client) => send(client, message));
+}
+
 function parseMessage<T>(raw: string): T | null {
   try {
     return JSON.parse(raw) as T;

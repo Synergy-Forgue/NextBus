@@ -86,6 +86,21 @@ export interface TelemetryPayload {
   recorded_at: string; // ISO 8601 timestamp
 }
 
+// Emergency Alert shape (SOS / Breakdown)
+export interface Alert {
+  id: number;
+  type: 'sos' | 'breakdown';
+  description: string | null;
+  latitude: number;
+  longitude: number;
+  license_plate: string | null;
+  route_number: string | null;
+  driver_phone: string | null;
+  status: 'active' | 'resolved';
+  created_at: Date;
+  resolved_at: Date | null;
+}
+
 // Generic API error response shape
 export interface ApiError {
   error: string;
