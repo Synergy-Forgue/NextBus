@@ -60,8 +60,8 @@ app.use(errorHandler);
 attachWebSocketServer(server);
 
 // ─── Start ───────────────────────────────────────────────────────────────────
-server.listen(PORT, () => {
-  console.log(`\n🚌 NXTBus Backend running on http://localhost:${PORT}`);
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚌 NXTBus Backend running on port ${PORT}`);
   console.log(`   Health:   GET  http://localhost:${PORT}/health`);
   console.log(`   Fleet:    GET  http://localhost:${PORT}/api/tracking/fleet`);
   console.log(`   Routes:   GET  http://localhost:${PORT}/api/routes`);
