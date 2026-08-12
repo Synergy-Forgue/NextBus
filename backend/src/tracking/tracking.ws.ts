@@ -71,6 +71,13 @@ export function broadcastAlertResolved(alert: object): void {
   subscribers.forEach((_, client) => send(client, message));
 }
 
+/** Broadcast bus offline notification to all connected subscriber clients */
+export function broadcastBusOffline(tripId: number): void {
+  removeBusState(tripId);
+  const message = { type: 'BUS_OFFLINE', trip_id: tripId };
+  subscribers.forEach((_, client) => send(client, message));
+}
+
 function parseMessage<T>(raw: string): T | null {
   try {
     return JSON.parse(raw) as T;
@@ -257,6 +264,19 @@ export function attachWebSocketServer(httpServer: Server): void {
       ws.close();
     }
   });
+
+  // ── Periodic Stale Fleet Cleanup Worker (60s threshold) ──
+  setInterval(() => {
+    const now = Date.now();
+    const STALE_THRESHOLD_MS = 60000;
+    getAllBusStates().forEach((bus) => {
+      const last = new Date(bus.last_updated).getTime();
+      if (now - last > STALE_THRESHOLD_MS) {
+        console.log(`[WS] Purging stale bus ${bus.license_plate} (trip #${bus.trip_id})`);
+        broadcastBusOffline(bus.trip_id);
+      }
+    });
+  }, 30000);
 }
 
 // ─── Fleet Snapshot with ETAs (for REST endpoint) ─────────────────────────────

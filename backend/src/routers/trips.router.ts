@@ -159,22 +159,31 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
   }
 });
 
+import { broadcastBusOffline } from '../tracking/tracking.ws';
+
 /**
  * PATCH /api/trips/:id/end
  * Marks a trip as completed.
  */
 router.patch('/:id/end', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { id } = req.params;
+    const rawId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const tripId = parseInt(rawId, 10);
     const result = await pool.query(
       `UPDATE trips SET status = 'completed', ended_at = NOW() WHERE id = $1 RETURNING id`,
-      [id]
+      [tripId]
     );
     if (result.rowCount === 0) {
-      res.status(404).json({ error: 'NotFound', message: `Trip ${id} not found.` });
+      res.status(404).json({ error: 'NotFound', message: `Trip ${rawId} not found.` });
       return;
     }
-    res.json({ message: `Trip ${id} marked as completed.` });
+
+    // Purge trip from live fleet and notify WebSocket clients
+    try {
+      broadcastBusOffline(tripId);
+    } catch {}
+
+    res.json({ message: `Trip ${rawId} marked as completed.` });
   } catch (err) {
     next(err);
   }
