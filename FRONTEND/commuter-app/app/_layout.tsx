@@ -23,7 +23,7 @@ export default function RootLayout() {
   }, []);
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+    <ThemeProvider value={DefaultTheme}>
       <Stack screenOptions={{ headerShown: false }}>
         {!isLoggedIn ? (
           <>
@@ -42,7 +42,7 @@ export default function RootLayout() {
           </>
         )}
       </Stack>
-      <StatusBar barStyle={colorScheme === 'dark' ? 'light-content' : 'dark-content'} />
+      <StatusBar style="dark" />
     </ThemeProvider>
   );
 }

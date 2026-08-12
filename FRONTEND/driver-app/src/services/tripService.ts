@@ -5,6 +5,7 @@ const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 /** Enriched trip returned by the backend (see BACKEND/src/types) */
 export interface BackendTrip {
   id: number;
+  trip_id?: number;
   route_id: number;
   bus_id: number;
   driver_id: number;

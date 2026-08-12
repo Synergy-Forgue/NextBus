@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Picker } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useCommuterStore } from '@/src/store/commuterStore';
@@ -284,7 +284,7 @@ export default function HomeScreen() {
       {savedRoutes.length > 0 && (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Your Saved Routes</Text>
-          {savedRoutes.map((route, i) => (
+          {savedRoutes.map((route: any, i: number) => (
             <TouchableOpacity key={i} onPress={() => { useCommuterStore.getState().setSelectedRoute(route); router.push('/(tabs)/map'); }} activeOpacity={0.8}>
               <View style={[styles.routeCard, styles.savedRouteCard]}>
                 <View style={styles.routeLeft}>

@@ -146,7 +146,7 @@ const styles = StyleSheet.create({
   settingLabel: { fontSize: 14, fontWeight: '700', color: BRAND.text, marginBottom: 2 },
   settingDesc: { fontSize: 12, color: BRAND.textSecondary },
   arrow: { fontSize: 18, color: BRAND.textTertiary, marginLeft: 12 },
-  tipRow: { backgroundColor: BRAND.surface, borderRadius: BRAND.radius.lg, padding: 12, marginBottom: 10, borderLeftWidth: 4, borderLeftColor: BRAND.info, ...BRAND.shadow },
+  tipRow: { backgroundColor: BRAND.surface, borderRadius: BRAND.radius.lg, padding: 12, marginBottom: 10, borderLeftWidth: 4, borderLeftColor: BRAND.primary, ...BRAND.shadow },
   tipText: { fontSize: 13, color: BRAND.text, fontWeight: '600', lineHeight: 20 },
   closeBtn: { height: 48, borderRadius: BRAND.radius.pill, justifyContent: 'center', alignItems: 'center' },
   closeBtnText: { color: BRAND.text, fontSize: 15, fontWeight: '800' },

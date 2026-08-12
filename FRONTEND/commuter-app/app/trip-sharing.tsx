@@ -66,7 +66,7 @@ export default function TripSharing() {
             <Text style={styles.emptyDesc}>Add emergency contacts to share your trips</Text>
           </View>
         ) : (
-          trustedContacts.map((contact, i) => (
+          trustedContacts.map((contact: any, i: number) => (
             <View key={i} style={styles.contactCard}>
               <View style={styles.contactAvatar}>
                 <Text style={styles.contactInitial}>{contact.name.substring(0, 1)}</Text>

@@ -44,192 +44,194 @@ export default function ProfileScreen() {
   };
 
   return (
-    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-      {/* Header Card */}
-      <LinearGradient colors={BRAND.gradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.header}>
-        <View>
-          <Text style={styles.headerEmoji}>👤</Text>
-          <Text style={styles.headerName}>{commuter?.name || 'Commuter'}</Text>
-          <Text style={styles.headerPhone}>{commuter?.phone}</Text>
-        </View>
-      </LinearGradient>
-
-      {/* Stats */}
-      <View style={styles.statsSection}>
-        {[
-          { label: 'Trips', value: '24' },
-          { label: 'Hours', value: '18h' },
-          { label: 'CO₂ Saved', value: '42 kg' },
-        ].map((stat, i) => (
-          <View key={i} style={styles.statBox}>
-            <Text style={styles.statValue}>{stat.value}</Text>
-            <Text style={styles.statLabel}>{stat.label}</Text>
+    <View style={{ flex: 1 }}>
+      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+        {/* Header Card */}
+        <LinearGradient colors={BRAND.gradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.header}>
+          <View>
+            <Text style={styles.headerEmoji}>👤</Text>
+            <Text style={styles.headerName}>{commuter?.name || 'Commuter'}</Text>
+            <Text style={styles.headerPhone}>{commuter?.phone}</Text>
           </View>
-        ))}
-      </View>
-
-      {/* Settings */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>NOTIFICATIONS & ALERTS</Text>
-
-        <View style={styles.settingRow}>
-          <View style={styles.settingInfo}>
-            <Text style={styles.settingLabel}>Push Notifications</Text>
-            <Text style={styles.settingDesc}>Get real-time transit updates</Text>
-          </View>
-          <Switch value={pushEnabled} onValueChange={setPushEnabled} trackColor={{ false: BRAND.border, true: '#C7D2FE' }} thumbColor={pushEnabled ? BRAND.primary : '#FFF'} />
-        </View>
-
-        <TouchableOpacity onPress={() => router.push('/alerts-settings')} activeOpacity={0.7}>
-          <View style={styles.settingRow}>
-            <View style={styles.settingInfo}>
-              <Text style={styles.settingLabel}>Smart Alerts</Text>
-              <Text style={styles.settingDesc}>AI-powered leave reminders</Text>
-            </View>
-            <Text style={styles.arrow}>→</Text>
-          </View>
-        </TouchableOpacity>
-      </View>
-
-      {/* Safety */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>SAFETY & EMERGENCY</Text>
-
-        <TouchableOpacity activeOpacity={0.7}>
-          <View style={styles.settingRow}>
-            <View style={styles.settingInfo}>
-              <Text style={styles.settingLabel}>Trusted Contacts</Text>
-              <Text style={styles.settingDesc}>{trustedContacts.length} contacts saved</Text>
-            </View>
-            <Text style={styles.arrow}>→</Text>
-          </View>
-        </TouchableOpacity>
-
-        <TouchableOpacity activeOpacity={0.7}>
-          <View style={styles.settingRow}>
-            <View style={styles.settingInfo}>
-              <Text style={styles.settingLabel}>Late Night Mode</Text>
-              <Text style={styles.settingDesc}>Auto-enable after 9 PM</Text>
-            </View>
-            <Text style={styles.arrow}>→</Text>
-          </View>
-        </TouchableOpacity>
-
-        <TouchableOpacity activeOpacity={0.7}>
-          <View style={styles.settingRow}>
-            <View style={styles.settingInfo}>
-              <Text style={styles.settingLabel}>Safety Tips</Text>
-              <Text style={styles.settingDesc}>Tips for traveling safely</Text>
-            </View>
-            <Text style={styles.arrow}>→</Text>
-          </View>
-        </TouchableOpacity>
-      </View>
-
-      {/* Preferences */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>PREFERENCES</Text>
-
-        <TouchableOpacity activeOpacity={0.7} onPress={() => setShowLanguageModal(true)}>
-          <View style={styles.settingRow}>
-            <View style={styles.settingInfo}>
-              <Text style={styles.settingLabel}>Language</Text>
-              <Text style={styles.settingDesc}>{language === 'en' ? 'English' : language === 'te' ? 'Telugu' : 'Kannada'}</Text>
-            </View>
-            <Text style={styles.arrow}>→</Text>
-          </View>
-        </TouchableOpacity>
-
-        <TouchableOpacity activeOpacity={0.7}>
-          <View style={styles.settingRow}>
-            <View style={styles.settingInfo}>
-              <Text style={styles.settingLabel}>Dark Mode</Text>
-              <Text style={styles.settingDesc}>Always on</Text>
-            </View>
-            <Text style={styles.arrow}>→</Text>
-          </View>
-        </TouchableOpacity>
-      </View>
-
-      {/* Support */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>SUPPORT</Text>
-
-        <TouchableOpacity activeOpacity={0.7}>
-          <View style={styles.settingRow}>
-            <View style={styles.settingInfo}>
-              <Text style={styles.settingLabel}>Help & FAQ</Text>
-              <Text style={styles.settingDesc}>Common questions answered</Text>
-            </View>
-            <Text style={styles.arrow}>→</Text>
-          </View>
-        </TouchableOpacity>
-
-        <TouchableOpacity activeOpacity={0.7}>
-          <View style={styles.settingRow}>
-            <View style={styles.settingInfo}>
-              <Text style={styles.settingLabel}>Report an Issue</Text>
-              <Text style={styles.settingDesc}>Help us improve</Text>
-            </View>
-            <Text style={styles.arrow}>→</Text>
-          </View>
-        </TouchableOpacity>
-      </View>
-
-      {/* Logout */}
-      <TouchableOpacity onPress={handleLogout} activeOpacity={0.8} style={{ marginHorizontal: 16 }}>
-        <LinearGradient colors={[BRAND.danger, '#DC2626']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.logoutBtn}>
-          <Text style={styles.logoutBtnText}>Logout</Text>
         </LinearGradient>
-      </TouchableOpacity>
 
-      <View style={{ height: 32 }} />
-    </ScrollView>
+        {/* Stats */}
+        <View style={styles.statsSection}>
+          {[
+            { label: 'Trips', value: '24' },
+            { label: 'Hours', value: '18h' },
+            { label: 'CO₂ Saved', value: '42 kg' },
+          ].map((stat, i) => (
+            <View key={i} style={styles.statBox}>
+              <Text style={styles.statValue}>{stat.value}</Text>
+              <Text style={styles.statLabel}>{stat.label}</Text>
+            </View>
+          ))}
+        </View>
 
-    {/* Language Selection Modal */}
-    <Modal visible={showLanguageModal} transparent animationType="slide">
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContent}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Choose Language</Text>
-            <TouchableOpacity onPress={() => setShowLanguageModal(false)}>
-              <Text style={styles.modalClose}>✕</Text>
-            </TouchableOpacity>
+        {/* Settings */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>NOTIFICATIONS & ALERTS</Text>
+
+          <View style={styles.settingRow}>
+            <View style={styles.settingInfo}>
+              <Text style={styles.settingLabel}>Push Notifications</Text>
+              <Text style={styles.settingDesc}>Get real-time transit updates</Text>
+            </View>
+            <Switch value={pushEnabled} onValueChange={setPushEnabled} trackColor={{ false: BRAND.border, true: '#C7D2FE' }} thumbColor={pushEnabled ? BRAND.primary : '#FFF'} />
           </View>
 
-          {languages.map((lang) => (
-            <TouchableOpacity
-              key={lang.code}
-              onPress={() => handleLanguageChange(lang.code as any)}
-              activeOpacity={0.7}
-              style={[
-                styles.languageOption,
-                language === lang.code && { backgroundColor: BRAND.primary, borderColor: BRAND.primary },
-              ]}
-            >
-              <Text style={styles.languageFlag}>{lang.flag}</Text>
-              <View style={{ flex: 1 }}>
-                <Text
-                  style={[
-                    styles.languageName,
-                    language === lang.code && { color: '#FFFFFF', fontWeight: '800' },
-                  ]}
-                >
-                  {lang.name}
-                </Text>
+          <TouchableOpacity onPress={() => router.push('/alerts-settings')} activeOpacity={0.7}>
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Smart Alerts</Text>
+                <Text style={styles.settingDesc}>AI-powered leave reminders</Text>
               </View>
-              {language === lang.code && (
-                <Text style={{ fontSize: 18, color: '#FFFFFF' }}>✓</Text>
-              )}
-            </TouchableOpacity>
-          ))}
-
-          <TouchableOpacity onPress={() => setShowLanguageModal(false)} style={{ marginTop: 20 }}>
-            <Text style={styles.modalDone}>Done</Text>
+              <Text style={styles.arrow}>→</Text>
+            </View>
           </TouchableOpacity>
         </View>
-      </View>
-    </Modal>
+
+        {/* Safety */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>SAFETY & EMERGENCY</Text>
+
+          <TouchableOpacity activeOpacity={0.7}>
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Trusted Contacts</Text>
+                <Text style={styles.settingDesc}>{trustedContacts.length} contacts saved</Text>
+              </View>
+              <Text style={styles.arrow}>→</Text>
+            </View>
+          </TouchableOpacity>
+
+          <TouchableOpacity activeOpacity={0.7}>
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Late Night Mode</Text>
+                <Text style={styles.settingDesc}>Auto-enable after 9 PM</Text>
+              </View>
+              <Text style={styles.arrow}>→</Text>
+            </View>
+          </TouchableOpacity>
+
+          <TouchableOpacity activeOpacity={0.7}>
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Safety Tips</Text>
+                <Text style={styles.settingDesc}>Tips for traveling safely</Text>
+              </View>
+              <Text style={styles.arrow}>→</Text>
+            </View>
+          </TouchableOpacity>
+        </View>
+
+        {/* Preferences */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>PREFERENCES</Text>
+
+          <TouchableOpacity activeOpacity={0.7} onPress={() => setShowLanguageModal(true)}>
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Language</Text>
+                <Text style={styles.settingDesc}>{language === 'en' ? 'English' : language === 'te' ? 'Telugu' : 'Kannada'}</Text>
+              </View>
+              <Text style={styles.arrow}>→</Text>
+            </View>
+          </TouchableOpacity>
+
+          <TouchableOpacity activeOpacity={0.7}>
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Dark Mode</Text>
+                <Text style={styles.settingDesc}>Always on</Text>
+              </View>
+              <Text style={styles.arrow}>→</Text>
+            </View>
+          </TouchableOpacity>
+        </View>
+
+        {/* Support */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>SUPPORT</Text>
+
+          <TouchableOpacity activeOpacity={0.7}>
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Help & FAQ</Text>
+                <Text style={styles.settingDesc}>Common questions answered</Text>
+              </View>
+              <Text style={styles.arrow}>→</Text>
+            </View>
+          </TouchableOpacity>
+
+          <TouchableOpacity activeOpacity={0.7}>
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Report an Issue</Text>
+                <Text style={styles.settingDesc}>Help us improve</Text>
+              </View>
+              <Text style={styles.arrow}>→</Text>
+            </View>
+          </TouchableOpacity>
+        </View>
+
+        {/* Logout */}
+        <TouchableOpacity onPress={handleLogout} activeOpacity={0.8} style={{ marginHorizontal: 16 }}>
+          <LinearGradient colors={[BRAND.danger, '#DC2626']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.logoutBtn}>
+            <Text style={styles.logoutBtnText}>Logout</Text>
+          </LinearGradient>
+        </TouchableOpacity>
+
+        <View style={{ height: 32 }} />
+      </ScrollView>
+
+      {/* Language Selection Modal */}
+      <Modal visible={showLanguageModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Choose Language</Text>
+              <TouchableOpacity onPress={() => setShowLanguageModal(false)}>
+                <Text style={styles.modalClose}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            {languages.map((lang) => (
+              <TouchableOpacity
+                key={lang.code}
+                onPress={() => handleLanguageChange(lang.code as any)}
+                activeOpacity={0.7}
+                style={[
+                  styles.languageOption,
+                  language === lang.code && { backgroundColor: BRAND.primary, borderColor: BRAND.primary },
+                ]}
+              >
+                <Text style={styles.languageFlag}>{lang.flag}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text
+                    style={[
+                      styles.languageName,
+                      language === lang.code && { color: '#FFFFFF', fontWeight: '800' },
+                    ]}
+                  >
+                    {lang.name}
+                  </Text>
+                </View>
+                {language === lang.code && (
+                  <Text style={{ fontSize: 18, color: '#FFFFFF' }}>✓</Text>
+                )}
+              </TouchableOpacity>
+            ))}
+
+            <TouchableOpacity onPress={() => setShowLanguageModal(false)} style={{ marginTop: 20 }}>
+              <Text style={styles.modalDone}>Done</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    </View>
   );
 }
 

@@ -1,10 +1,9 @@
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { DefaultTheme, ThemeProvider } from '@react-navigation/native';
 
 export default function RootLayout() {
   return (
-    <ThemeProvider value={DefaultTheme}>
+    <>
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index" />
         <Stack.Screen name="splash" />
@@ -21,6 +20,6 @@ export default function RootLayout() {
         <Stack.Screen name="scan-driver-qr" options={{ presentation: 'modal' }} />
       </Stack>
       <StatusBar style="auto" />
-    </ThemeProvider>
+    </>
   );
 }

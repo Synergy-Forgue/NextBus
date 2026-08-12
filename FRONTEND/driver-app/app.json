@@ -20,7 +20,7 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.nxtbus.driver"
+      "package": "com.lokeshgavara34.driverapp"
     },
     "web": {
       "output": "static",

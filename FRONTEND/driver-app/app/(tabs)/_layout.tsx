@@ -25,7 +25,7 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'Home',
-          tabBarIcon: ({ color, size }) => (
+          tabBarIcon: ({ color, size }: { color: string; size: number }) => (
             <MaterialIcons name="home" size={size} color={color} />
           ),
         }}
@@ -34,7 +34,7 @@ export default function TabLayout() {
         name="trip-log"
         options={{
           title: 'Trip Log',
-          tabBarIcon: ({ color, size }) => (
+          tabBarIcon: ({ color, size }: { color: string; size: number }) => (
             <MaterialIcons name="description" size={size} color={color} />
           ),
         }}
@@ -43,7 +43,7 @@ export default function TabLayout() {
         name="alerts"
         options={{
           title: 'Alerts',
-          tabBarIcon: ({ color, size }) => (
+          tabBarIcon: ({ color, size }: { color: string; size: number }) => (
             <MaterialIcons name="notifications-none" size={size} color={color} />
           ),
         }}
@@ -52,7 +52,7 @@ export default function TabLayout() {
         name="profile"
         options={{
           title: 'Profile',
-          tabBarIcon: ({ color, size }) => (
+          tabBarIcon: ({ color, size }: { color: string; size: number }) => (
             <MaterialIcons name="person-outline" size={size} color={color} />
           ),
         }}

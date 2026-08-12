@@ -280,9 +280,6 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   headerCard: {
-    backgroundColor: CONSTANTS.Colors.primary,
-  },
-  headerCard: {
     backgroundColor: '#fff',
   },
   headerTop: {

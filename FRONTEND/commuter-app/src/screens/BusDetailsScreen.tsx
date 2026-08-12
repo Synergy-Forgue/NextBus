@@ -110,7 +110,7 @@ export default function BusDetailsScreen({ route, navigation }: any) {
             <Divider style={styles.divider} />
             <View style={styles.infoRow}>
               <Text style={styles.infoLabel}>Available Seats</Text>
-              <Text style={styles.infoValue} style={{ color: CONSTANTS.Colors.success }}>
+              <Text style={[styles.infoValue, { color: CONSTANTS.Colors.success }]}>
                 22
               </Text>
             </View>
@@ -219,9 +219,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 12,
     gap: 12,
-  },
-  headerCard: {
-    backgroundColor: CONSTANTS.Colors.primary,
   },
   headerCard: {
     backgroundColor: '#fff',

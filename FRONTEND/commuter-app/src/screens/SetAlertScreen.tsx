@@ -6,7 +6,7 @@ import {
   TouchableOpacity,
   Alert,
 } from 'react-native'
-import { Text, Card, Button, Divider, RadioButton, Slider, Switch } from 'react-native-paper'
+import { Text, Card, Button, Divider, RadioButton, Switch } from 'react-native-paper'
 import useCommuterStore from '../store/useCommuterStore'
 import { CONSTANTS } from '../utils/constants'
 
@@ -25,15 +25,9 @@ export default function SetAlertScreen({ route, navigation }: any) {
   const handleSetAlert = () => {
     const alertData = {
       id: `alert_${Date.now()}`,
-      type: alertMode === 'ai' ? 'AI_PROACTIVE' : 'CUSTOM',
-      busRoute: bus.routeNo || '5A',
-      minutesThreshold: customMinutes,
-      notifyBoard,
-      notifyAlight,
-      soundEnabled,
-      vibrationEnabled,
-      timestamp: Date.now(),
-      status: 'active',
+      busId: String(bus.busId || bus.id || '1'),
+      stopId: String(bus.stopId || '1'),
+      thresholdMinutes: customMinutes,
     }
 
     addAlert(alertData)
@@ -125,19 +119,25 @@ export default function SetAlertScreen({ route, navigation }: any) {
             <Divider />
             <Card.Content>
               <Text style={styles.sliderLabel}>
-                Notify when bus is {Math.round(customMinutes)} minutes away
+                Notify when bus is {customMinutes} minutes away
               </Text>
-              <Slider
-                style={styles.slider}
-                min={1}
-                max={30}
-                value={customMinutes}
-                onValueChange={setCustomMinutes}
-                step={1}
-              />
-              <View style={styles.sliderLabels}>
-                <Text style={styles.minLabel}>1 min</Text>
-                <Text style={styles.maxLabel}>30 mins</Text>
+              <View style={{ flexDirection: 'row', gap: 8, marginVertical: 8, justifyContent: 'space-between' }}>
+                {[5, 10, 15, 20, 30].map((mins) => (
+                  <TouchableOpacity
+                    key={mins}
+                    onPress={() => setCustomMinutes(mins)}
+                    style={{
+                      paddingHorizontal: 14,
+                      paddingVertical: 10,
+                      borderRadius: 8,
+                      backgroundColor: customMinutes === mins ? CONSTANTS.Colors.primary : '#F0F0F0',
+                    }}
+                  >
+                    <Text style={{ color: customMinutes === mins ? '#FFF' : '#333', fontWeight: '700' }}>
+                      {mins}m
+                    </Text>
+                  </TouchableOpacity>
+                ))}
               </View>
             </Card.Content>
           </Card>
