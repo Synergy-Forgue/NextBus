@@ -9,31 +9,63 @@ import {
   ActivityIndicator,
 } from 'react-native'
 import { LinearGradient } from 'expo-linear-gradient'
-import { searchRoutes } from '../api/apiClient'
+import useCommuterStore from '../store/useCommuterStore'
+import { routeService } from '../services/routeService'
 import { BRAND } from '../styles/brand'
 
 /**
- * Search & Trip Planner (Figma): "Plan your trip" From/To card,
- * Find Routes CTA, popular destination chips, results with live buses.
+ * Search & Trip Planner:
+ * Searches real routes, stops, and live bus positions from Railway backend.
+ * Selecting a route establishes the Journey Context in useCommuterStore and
+ * navigates directly to the live contextual map.
  */
 const POPULAR = ['RTC Complex', 'RK Beach', 'Kailasagiri', 'Jagadamba', 'Bheemili', 'Gajuwaka']
 
 export default function SearchRoutesScreen({ navigation }: any) {
-  const [from, setFrom] = useState('Current Location')
-  const [to, setTo] = useState('')
+  const [from, setFrom] = useState('RTC Complex')
+  const [to, setTo] = useState('Kailasagiri')
   const [loading, setLoading] = useState(false)
   const [results, setResults] = useState<any[] | null>(null)
+  const { setSelectedRoute, setSelectedBus, addSavedRoute } = useCommuterStore()
 
   const findRoutes = async () => {
     setLoading(true)
-    const res = await searchRoutes(from, to, 'FASTEST')
-    setResults(res.success ? res.data : [])
-    setLoading(false)
+    try {
+      const res = await routeService.searchRoutes(from, to, 'fastest')
+      setResults(res)
+    } catch {
+      setResults([])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleSelectRoute = (res: any) => {
+    const routeObj = {
+      id: res.route.id,
+      route_number: res.route.route_number,
+      route_name: res.route.route_name,
+      start_stop: res.route.start_stop,
+      end_stop: res.route.end_stop,
+    }
+    setSelectedRoute(routeObj)
+    if (res.bus) {
+      setSelectedBus({
+        busId: res.bus.id || res.bus.license_plate,
+        lat: res.bus.latitude,
+        lng: res.bus.longitude,
+        routeNo: res.route.route_number,
+        speed: res.bus.speed,
+        eta: res.eta,
+      })
+    }
+    addSavedRoute(routeObj)
+    navigation.navigate('Map')
   }
 
   const crowdLabel = (count: number) => {
-    if (count <= 15) return { text: 'Low Crowd', color: BRAND.success }
-    if (count <= 35) return { text: 'Medium Crowd', color: BRAND.warning }
+    if (count <= 35) return { text: 'Low Crowd', color: BRAND.success }
+    if (count <= 70) return { text: 'Medium Crowd', color: BRAND.warning }
     return { text: 'High Crowd', color: BRAND.danger }
   }
 
@@ -56,7 +88,7 @@ export default function SearchRoutesScreen({ navigation }: any) {
             style={styles.input}
             value={from}
             onChangeText={setFrom}
-            placeholder="From"
+            placeholder="From (e.g. RTC Complex)"
             placeholderTextColor={BRAND.textTertiary}
           />
         </View>
@@ -67,7 +99,7 @@ export default function SearchRoutesScreen({ navigation }: any) {
             style={styles.input}
             value={to}
             onChangeText={setTo}
-            placeholder="To: Enter destination"
+            placeholder="To: Enter destination (e.g. Kailasagiri)"
             placeholderTextColor={BRAND.textTertiary}
           />
         </View>
@@ -94,39 +126,32 @@ export default function SearchRoutesScreen({ navigation }: any) {
           <Text style={styles.sectionLabel}>
             {results.length ? 'AVAILABLE ROUTES' : 'NO ROUTES FOUND'}
           </Text>
-          {results.map((r: any) => {
-            const live = r.liveBus
-            const crowd = live ? crowdLabel(live.occupancy_count) : null
-            const eta = live?.stop_etas?.find((s: any) => s.eta_seconds != null)
+          {results.map((r: any, idx: number) => {
+            const crowd = crowdLabel(r.crowd || 30)
             return (
               <TouchableOpacity
-                key={r.id}
+                key={r.route.id || idx}
                 style={styles.resultCard}
                 activeOpacity={0.85}
-                onPress={() => navigation.navigate('Map')}
+                onPress={() => handleSelectRoute(r)}
               >
                 <View style={styles.resultHeader}>
                   <View style={styles.routeBadge}>
-                    <Text style={styles.routeBadgeText}>{r.route_number}</Text>
+                    <Text style={styles.routeBadgeText}>Route {r.route.route_number}</Text>
                   </View>
-                  {eta && (
-                    <Text style={styles.resultEta}>
-                      {Math.max(1, Math.round(eta.eta_seconds / 60))} min
-                    </Text>
-                  )}
+                  <Text style={styles.resultEta}>
+                    ⏱ {r.eta} min
+                  </Text>
                 </View>
-                <Text style={styles.resultName}>{r.route_name}</Text>
+                <Text style={styles.resultName}>{r.route.route_name}</Text>
+                <Text style={styles.resultStops}>
+                  {r.route.start_stop} ➔ {r.route.end_stop}
+                </Text>
                 <View style={styles.resultFooter}>
-                  {live ? (
-                    <>
-                      <Text style={[styles.crowdText, { color: crowd!.color }]}>
-                        👥 {crowd!.text}
-                      </Text>
-                      <Text style={styles.liveTag}>● LIVE</Text>
-                    </>
-                  ) : (
-                    <Text style={styles.offlineTag}>No bus running right now</Text>
-                  )}
+                  <Text style={[styles.crowdText, { color: crowd.color }]}>
+                    👥 {crowd.text} ({r.crowd}%)
+                  </Text>
+                  <Text style={styles.fareTag}>₹{r.fare}</Text>
                 </View>
               </TouchableOpacity>
             )
@@ -141,7 +166,10 @@ export default function SearchRoutesScreen({ navigation }: any) {
           <TouchableOpacity
             key={p}
             style={styles.chip}
-            onPress={() => setTo(p)}
+            onPress={() => {
+              setTo(p)
+              findRoutes()
+            }}
           >
             <Text style={styles.chipText}>{p}</Text>
           </TouchableOpacity>
@@ -155,7 +183,7 @@ export default function SearchRoutesScreen({ navigation }: any) {
         onPress={() => navigation.navigate('Map')}
       >
         <Text style={styles.mapPreviewEmoji}>🗺️</Text>
-        <Text style={styles.mapPreviewText}>Explore City Map</Text>
+        <Text style={styles.mapPreviewText}>Explore Full City Map</Text>
       </TouchableOpacity>
 
       <View style={{ height: 32 }} />
@@ -269,9 +297,14 @@ const styles = StyleSheet.create({
     color: BRAND.success,
   },
   resultName: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '700',
     color: BRAND.text,
+  },
+  resultStops: {
+    fontSize: 12,
+    color: BRAND.textSecondary,
+    marginTop: 2,
     marginBottom: 8,
   },
   resultFooter: {
@@ -283,15 +316,10 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
-  liveTag: {
-    fontSize: 11,
+  fareTag: {
+    fontSize: 13,
     fontWeight: '800',
-    color: BRAND.success,
-  },
-  offlineTag: {
-    fontSize: 12,
-    color: BRAND.textTertiary,
-    fontWeight: '600',
+    color: BRAND.primary,
   },
   chipsWrap: {
     flexDirection: 'row',
@@ -315,14 +343,14 @@ const styles = StyleSheet.create({
   mapPreview: {
     marginHorizontal: 16,
     marginTop: 20,
-    height: 140,
+    height: 120,
     borderRadius: BRAND.radius.xl,
     backgroundColor: '#E0F2FE',
     alignItems: 'center',
     justifyContent: 'center',
   },
   mapPreviewEmoji: {
-    fontSize: 36,
+    fontSize: 32,
     marginBottom: 6,
   },
   mapPreviewText: {

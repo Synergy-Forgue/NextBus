@@ -12,15 +12,23 @@ import useCommuterStore from '../store/useCommuterStore'
 import useRealTimeBus from '../hooks/useRealTimeBus'
 import { BRAND } from '../styles/brand'
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000'
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://nextbus-production.up.railway.app'
 
 /**
- * Home Dashboard (Figma): "Where to today?" header, quick stats,
- * Smart Picks (ranked from the LIVE fleet — nearest/soonest buses),
- * Saved Routes, Transit Alerts (live from /api/alerts), promo card.
+ * Home Dashboard:
+ * 1. Live greeting & real stats from live WebSocket stream & API
+ * 2. Smart Picks (soonest arriving live buses — tapping establishes journey context)
+ * 3. Saved Routes (Empty State if 0 saved, real routes if saved)
+ * 4. Transit Alerts (Real active alerts from Railway backend)
  */
 export default function HomeDashboardScreen({ navigation }: any) {
-  const { userProfile } = useCommuterStore()
+  const {
+    savedRoutes,
+    loadSavedRoutes,
+    removeSavedRoute,
+    setSelectedRoute,
+    setSelectedBus,
+  } = useCommuterStore()
   const { busPositions, isConnected } = useRealTimeBus()
   const [alerts, setAlerts] = useState<any[]>([])
   const [refreshing, setRefreshing] = useState(false)
@@ -30,13 +38,17 @@ export default function HomeDashboardScreen({ navigation }: any) {
   const loadAlerts = async () => {
     try {
       const res = await fetch(`${API_URL}/api/alerts?status=active`)
-      if (res.ok) setAlerts(await res.json())
+      if (res.ok) {
+        const data = await res.json()
+        setAlerts(Array.isArray(data) ? data : [])
+      }
     } catch {
-      /* backend unreachable — leave list empty */
+      setAlerts([])
     }
   }
 
   useEffect(() => {
+    loadSavedRoutes()
     loadAlerts()
     const t = setInterval(loadAlerts, 30000)
     return () => clearInterval(t)
@@ -44,6 +56,7 @@ export default function HomeDashboardScreen({ navigation }: any) {
 
   const onRefresh = async () => {
     setRefreshing(true)
+    await loadSavedRoutes()
     await loadAlerts()
     setRefreshing(false)
   }
@@ -56,15 +69,33 @@ export default function HomeDashboardScreen({ navigation }: any) {
   }
 
   const crowdLabel = (level: number) => {
-    if (level <= 3) return { text: '😊 Low Crowd', color: BRAND.success }
-    if (level <= 7) return { text: '😐 Medium Crowd', color: BRAND.warning }
+    if (level <= 35) return { text: '😊 Low Crowd', color: BRAND.success }
+    if (level <= 70) return { text: '😐 Medium Crowd', color: BRAND.warning }
     return { text: '🔥 High Crowd', color: BRAND.danger }
   }
 
-  // Smart Picks: soonest-arriving live buses first
+  // Smart Picks: soonest arriving live buses first
   const smartPicks = [...liveBuses]
     .sort((a: any, b: any) => (a.eta ?? 999) - (b.eta ?? 999))
     .slice(0, 4)
+
+  const handlePickPress = (bus: any) => {
+    const routeObj = {
+      id: bus.route_id || 1,
+      route_number: bus.routeNo || '10K',
+      route_name: `Route ${bus.routeNo || '10K'}`,
+      start_stop: bus.current_stop_name || 'RTC Complex',
+      end_stop: bus.next_stop_name || 'Kailasagiri',
+    }
+    setSelectedRoute(routeObj)
+    setSelectedBus(bus)
+    navigation.navigate('Map')
+  }
+
+  const handleSavedRoutePress = (route: any) => {
+    setSelectedRoute(route)
+    navigation.navigate('Map')
+  }
 
   return (
     <ScrollView
@@ -100,22 +131,22 @@ export default function HomeDashboardScreen({ navigation }: any) {
         </TouchableOpacity>
       </LinearGradient>
 
-      {/* Quick stats */}
+      {/* Quick stats — Real dynamic data */}
       <View style={styles.statsRow}>
         <View style={styles.statCard}>
           <Text style={styles.statIcon}>📍</Text>
           <Text style={styles.statValue}>{liveBuses.length}</Text>
-          <Text style={styles.statLabel}>Nearby</Text>
+          <Text style={styles.statLabel}>Active Buses</Text>
         </View>
         <View style={styles.statCard}>
           <Text style={styles.statIcon}>⏱</Text>
-          <Text style={styles.statValue}>94%</Text>
-          <Text style={styles.statLabel}>On-time</Text>
+          <Text style={styles.statValue}>{isConnected ? 'Live' : 'Connecting'}</Text>
+          <Text style={styles.statLabel}>Network</Text>
         </View>
         <View style={styles.statCard}>
-          <Text style={styles.statIcon}>🚌</Text>
-          <Text style={styles.statValue}>{liveBuses.length}</Text>
-          <Text style={styles.statLabel}>Active</Text>
+          <Text style={styles.statIcon}>🚨</Text>
+          <Text style={styles.statValue}>{alerts.length}</Text>
+          <Text style={styles.statLabel}>Active Alerts</Text>
         </View>
       </View>
 
@@ -131,20 +162,20 @@ export default function HomeDashboardScreen({ navigation }: any) {
         <View style={styles.emptyCard}>
           <Text style={styles.emptyText}>
             {isConnected
-              ? 'Waiting for live buses…'
-              : 'Connecting to live tracking…'}
+              ? 'Waiting for live bus positions…'
+              : 'Connecting to live tracking server…'}
           </Text>
         </View>
       ) : (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.picksRow}>
           {smartPicks.map((bus: any) => {
-            const crowd = crowdLabel(bus.crowdLevel)
+            const crowd = crowdLabel(bus.crowdLevel || 20)
             return (
               <TouchableOpacity
                 key={bus.busId}
                 style={styles.pickCard}
                 activeOpacity={0.85}
-                onPress={() => navigation.navigate('Map')}
+                onPress={() => handlePickPress(bus)}
               >
                 <View style={styles.pickHeader}>
                   <View style={styles.routeBadge}>
@@ -154,9 +185,9 @@ export default function HomeDashboardScreen({ navigation }: any) {
                     <Text style={styles.pickEta}>{bus.eta} min</Text>
                   )}
                 </View>
-                <Text style={styles.pickPlate}>{bus.licensePlate || 'Live bus'}</Text>
+                <Text style={styles.pickPlate}>{bus.licensePlate || bus.busId || 'Live bus'}</Text>
                 <Text style={styles.pickSub}>
-                  {bus.speed} km/h · live tracking
+                  {bus.speed || 25} km/h · live tracking
                 </Text>
                 <Text style={[styles.pickCrowd, { color: crowd.color }]}>
                   {crowd.text}
@@ -167,29 +198,61 @@ export default function HomeDashboardScreen({ navigation }: any) {
         </ScrollView>
       )}
 
-      {/* Saved Routes */}
+      {/* Saved Routes — Semantic State Model (Empty vs Populated) */}
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>Saved Routes</Text>
+        <TouchableOpacity onPress={() => navigation.navigate('SavedRoutes')}>
+          <Text style={styles.sectionLink}>Manage</Text>
+        </TouchableOpacity>
       </View>
-      <TouchableOpacity
-        style={styles.savedRow}
-        onPress={() => navigation.navigate('SavedRoutes')}
-      >
-        <Text style={styles.savedIcon}>🏠</Text>
-        <View style={styles.savedInfo}>
-          <Text style={styles.savedTitle}>Home → Office</Text>
-          <Text style={styles.savedSub}>Tap to manage your saved routes</Text>
-        </View>
-        <Text style={styles.chevron}>›</Text>
-      </TouchableOpacity>
 
-      {/* Transit Alerts — live from the backend alerts pipeline */}
+      {savedRoutes.length === 0 ? (
+        <TouchableOpacity
+          style={styles.emptySavedCard}
+          onPress={() => navigation.navigate('Search')}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.emptySavedIcon}>🔖</Text>
+          <View style={styles.emptySavedInfo}>
+            <Text style={styles.emptySavedTitle}>No saved routes yet</Text>
+            <Text style={styles.emptySavedSub}>Search your daily route to bookmark it here</Text>
+          </View>
+          <Text style={styles.emptySavedCTA}>Search →</Text>
+        </TouchableOpacity>
+      ) : (
+        savedRoutes.slice(0, 3).map((route: any, index: number) => (
+          <TouchableOpacity
+            key={route.id || index}
+            style={styles.savedRow}
+            onPress={() => handleSavedRoutePress(route)}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.savedIcon}>⭐</Text>
+            <View style={styles.savedInfo}>
+              <Text style={styles.savedTitle}>
+                Route {route.route_number || route.routeId}: {route.route_name || route.routeName}
+              </Text>
+              <Text style={styles.savedSub}>
+                {route.start_stop || route.fromStop || 'Start'} ➔ {route.end_stop || route.toStop || 'Destination'}
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => removeSavedRoute(route.id || route.route_number)}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Text style={styles.deleteIcon}>🗑️</Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        ))
+      )}
+
+      {/* Transit Alerts — Real backend updates */}
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Transit Alerts</Text>
+        <Text style={styles.sectionTitle}>Transit Updates</Text>
       </View>
       {alerts.length === 0 ? (
         <View style={styles.allClearCard}>
-          <Text style={styles.allClearText}>✅ All services running normally</Text>
+          <Text style={styles.allClearText}>✅ All services running normally across Visakhapatnam</Text>
         </View>
       ) : (
         alerts.slice(0, 3).map((a) => (
@@ -199,11 +262,11 @@ export default function HomeDashboardScreen({ navigation }: any) {
             </Text>
             <View style={styles.alertInfo}>
               <Text style={styles.alertTitle}>
-                {a.type === 'sos' ? 'Emergency reported' : 'Bus breakdown'} — Route{' '}
+                {a.type === 'sos' ? 'Emergency reported' : 'Service Alert'} — Route{' '}
                 {a.route_number || '?'}
               </Text>
               <Text style={styles.alertSub}>
-                {a.description || 'Service may be affected on this route.'}
+                {a.description || 'Service disruption reported on this route.'}
               </Text>
             </View>
           </View>
@@ -217,13 +280,13 @@ export default function HomeDashboardScreen({ navigation }: any) {
         end={{ x: 1, y: 1 }}
         style={styles.promo}
       >
-        <Text style={styles.promoTag}>Exclusive Offer</Text>
+        <Text style={styles.promoTag}>APSRTC Pass</Text>
         <Text style={styles.promoTitle}>Unlimited Monthly Pass</Text>
         <Text style={styles.promoSub}>
-          Save up to 40% on your daily commute with the Premium Pass.
+          Save up to 40% on your daily commute with the NXTBus Digital Pass.
         </Text>
         <View style={styles.promoBtn}>
-          <Text style={styles.promoBtnText}>Coming Soon</Text>
+          <Text style={styles.promoBtnText}>Available Soon</Text>
         </View>
       </LinearGradient>
 
@@ -391,17 +454,51 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
   },
-  savedRow: {
+  emptySavedCard: {
     flexDirection: 'row',
     alignItems: 'center',
     marginHorizontal: 16,
     backgroundColor: BRAND.surface,
     borderRadius: BRAND.radius.lg,
     padding: 16,
+    borderWidth: 1,
+    borderColor: BRAND.border,
+    borderStyle: 'dashed',
+  },
+  emptySavedIcon: {
+    fontSize: 24,
+    marginRight: 14,
+  },
+  emptySavedInfo: {
+    flex: 1,
+  },
+  emptySavedTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: BRAND.text,
+  },
+  emptySavedSub: {
+    fontSize: 12,
+    color: BRAND.textSecondary,
+    marginTop: 2,
+  },
+  emptySavedCTA: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: BRAND.primary,
+  },
+  savedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginBottom: 10,
+    backgroundColor: BRAND.surface,
+    borderRadius: BRAND.radius.lg,
+    padding: 16,
     ...BRAND.shadow,
   },
   savedIcon: {
-    fontSize: 22,
+    fontSize: 20,
     marginRight: 14,
   },
   savedInfo: {
@@ -417,9 +514,9 @@ const styles = StyleSheet.create({
     color: BRAND.textSecondary,
     marginTop: 2,
   },
-  chevron: {
-    fontSize: 22,
-    color: BRAND.textTertiary,
+  deleteIcon: {
+    fontSize: 16,
+    paddingLeft: 10,
   },
   allClearCard: {
     marginHorizontal: 16,

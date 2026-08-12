@@ -1,20 +1,77 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import {
   View,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
   Alert,
+  ActivityIndicator,
 } from 'react-native'
 import { Text, Card, Button, Divider, Chip, Icon } from 'react-native-paper'
 import useCommuterStore from '../store/useCommuterStore'
+import { routeService } from '../services/routeService'
 import { CONSTANTS } from '../utils/constants'
 
 export default function BusDetailsScreen({ route, navigation }: any) {
   const { params } = route
   const bus = params?.bus || {}
-  const [isFavorite, setIsFavorite] = useState(false)
+
+  const {
+    setSelectedRoute,
+    setSelectedBus,
+    addSavedRoute,
+    savedRoutes,
+  } = useCommuterStore()
+
+  const [stops, setStops] = useState<any[]>([])
+  const [loadingStops, setLoadingStops] = useState(true)
   const [tripSharing, setTripSharing] = useState(false)
+
+  const isFavorite = savedRoutes.some(
+    (r) => r.route_number === (bus.routeNo || bus.route_number)
+  )
+
+  useEffect(() => {
+    const routeId = bus.route_id || 1
+    fetchStops(routeId)
+  }, [bus])
+
+  const fetchStops = async (routeId: number) => {
+    try {
+      setLoadingStops(true)
+      const data = await routeService.getRouteStops(routeId)
+      setStops(data)
+    } catch {
+      setStops([])
+    } finally {
+      setLoadingStops(false)
+    }
+  }
+
+  const toggleFavorite = () => {
+    const routeObj = {
+      id: bus.route_id || 1,
+      route_number: bus.routeNo || bus.route_number || '10K',
+      route_name: `Route ${bus.routeNo || bus.route_number || '10K'}`,
+      start_stop: stops[0]?.stop_name || 'RTC Complex',
+      end_stop: stops[stops.length - 1]?.stop_name || 'Kailasagiri',
+    }
+    addSavedRoute(routeObj)
+    Alert.alert('Saved', `Route ${routeObj.route_number} added to your saved routes!`)
+  }
+
+  const handleTrackOnMap = () => {
+    const routeObj = {
+      id: bus.route_id || 1,
+      route_number: bus.routeNo || bus.route_number || '10K',
+      route_name: `Route ${bus.routeNo || bus.route_number || '10K'}`,
+      start_stop: stops[0]?.stop_name || 'RTC Complex',
+      end_stop: stops[stops.length - 1]?.stop_name || 'Kailasagiri',
+    }
+    setSelectedRoute(routeObj)
+    setSelectedBus(bus)
+    navigation.navigate('Map')
+  }
 
   const handleSetAlert = () => {
     navigation.navigate('SetAlert', { bus })
@@ -26,17 +83,12 @@ export default function BusDetailsScreen({ route, navigation }: any) {
       'Trip Sharing',
       tripSharing
         ? 'Trip sharing stopped'
-        : 'Share this trip with your trusted contacts?',
+        : 'Live trip link copied to share with trusted emergency contacts.'
     )
   }
 
-  const mockStops = [
-    { id: 1, name: 'Central Station', time: '09:15', distance: 0 },
-    { id: 2, name: 'City Center', time: '09:28', distance: 3.2 },
-    { id: 3, name: 'Tech Park Gate', time: '09:45', distance: 8.5 },
-    { id: 4, name: 'Airport Road', time: '10:05', distance: 15.2 },
-    { id: 5, name: 'Terminal', time: '10:20', distance: 18.6 },
-  ]
+  const startStopName = stops[0]?.stop_name || bus.source || 'RTC Complex'
+  const endStopName = stops[stops.length - 1]?.stop_name || bus.destination || 'Kailasagiri'
 
   return (
     <View style={styles.container}>
@@ -45,20 +97,22 @@ export default function BusDetailsScreen({ route, navigation }: any) {
         <Card style={styles.headerCard}>
           <Card.Content>
             <View style={styles.headerTop}>
-              <Text style={styles.routeNumber}>{bus.routeNo || '5A'}</Text>
-              <TouchableOpacity onPress={() => setIsFavorite(!isFavorite)}>
+              <Text style={styles.routeNumber}>
+                Route {bus.routeNo || bus.route_number || '10K'}
+              </Text>
+              <TouchableOpacity onPress={toggleFavorite}>
                 <Icon
                   source={isFavorite ? 'heart' : 'heart-outline'}
-                  size={24}
+                  size={26}
                   color={isFavorite ? CONSTANTS.Colors.danger : '#999'}
                 />
               </TouchableOpacity>
             </View>
 
             <View style={styles.routePath}>
-              <Text style={styles.endpoint}>{bus.source || 'Central Station'}</Text>
-              <Text style={styles.arrow}>→</Text>
-              <Text style={styles.endpoint}>{bus.destination || 'Airport'}</Text>
+              <Text style={styles.endpoint}>{startStopName}</Text>
+              <Text style={styles.arrow}>➔</Text>
+              <Text style={styles.endpoint}>{endStopName}</Text>
             </View>
 
             <Divider style={styles.divider} />
@@ -69,11 +123,11 @@ export default function BusDetailsScreen({ route, navigation }: any) {
                 <Text style={styles.statLabel}>ETA</Text>
               </View>
               <View style={styles.statItem}>
-                <Text style={styles.statValue}>{bus.crowdLevel || 6}/10</Text>
+                <Text style={styles.statValue}>{bus.crowdLevel || bus.occupancy || 25}%</Text>
                 <Text style={styles.statLabel}>Crowd</Text>
               </View>
               <View style={styles.statItem}>
-                <Text style={styles.statValue}>₹45</Text>
+                <Text style={styles.statValue}>₹15</Text>
                 <Text style={styles.statLabel}>Fare</Text>
               </View>
               <View style={styles.statItem}>
@@ -90,84 +144,66 @@ export default function BusDetailsScreen({ route, navigation }: any) {
 
         {/* Bus Info Card */}
         <Card style={styles.infoCard}>
-          <Card.Title title="Bus Information" titleStyle={styles.cardTitle} />
+          <Card.Title title="Bus Telemetry & Fleet Info" titleStyle={styles.cardTitle} />
           <Divider />
           <Card.Content>
             <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Bus Number</Text>
-              <Text style={styles.infoValue}>KA-12-AB-1234</Text>
-            </View>
-            <Divider style={styles.divider} />
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Bus Type</Text>
-              <Text style={styles.infoValue}>Non-AC</Text>
-            </View>
-            <Divider style={styles.divider} />
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Capacity</Text>
-              <Text style={styles.infoValue}>52 Seats</Text>
-            </View>
-            <Divider style={styles.divider} />
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Available Seats</Text>
-              <Text style={[styles.infoValue, { color: CONSTANTS.Colors.success }]}>
-                22
+              <Text style={styles.infoLabel}>License Plate</Text>
+              <Text style={styles.infoValue}>
+                {bus.licensePlate || bus.license_plate || 'AP 31 TV 1001'}
               </Text>
+            </View>
+            <Divider style={styles.divider} />
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Vehicle Type</Text>
+              <Text style={styles.infoValue}>APSRTC City Metro (EV/Diesel)</Text>
+            </View>
+            <Divider style={styles.divider} />
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Seating Capacity</Text>
+              <Text style={styles.infoValue}>{bus.capacity || 50} Seats</Text>
             </View>
             <Divider style={styles.divider} />
             <View style={styles.infoRow}>
               <Text style={styles.infoLabel}>Amenities</Text>
               <View style={styles.amenityChips}>
-                <Chip style={styles.amenityChip}>♀️ Women</Chip>
-                <Chip style={styles.amenityChip}>🚽 Toilet</Chip>
-                <Chip style={styles.amenityChip}>📡 WiFi</Chip>
+                <Chip style={styles.amenityChip}>♀️ Women Section</Chip>
+                <Chip style={styles.amenityChip}>📡 GPS Tracking</Chip>
+                <Chip style={styles.amenityChip}>👁️ AI Vision</Chip>
               </View>
             </View>
           </Card.Content>
         </Card>
 
-        {/* Stops Card */}
+        {/* Real Route Stops Card */}
         <Card style={styles.stopsCard}>
-          <Card.Title title="Route Stops" titleStyle={styles.cardTitle} />
+          <Card.Title title="Route Stop Sequence" titleStyle={styles.cardTitle} />
           <Divider />
           <Card.Content>
-            {mockStops.map((stop, idx) => (
-              <View key={stop.id}>
-                <View style={styles.stopItem}>
-                  <View style={styles.stopDot} />
-                  <View style={styles.stopInfo}>
-                    <Text style={styles.stopName}>{stop.name}</Text>
-                    <Text style={styles.stopDistance}>{stop.distance} km</Text>
+            {loadingStops ? (
+              <ActivityIndicator size="small" color={CONSTANTS.Colors.primary} style={{ marginVertical: 12 }} />
+            ) : stops.length === 0 ? (
+              <Text style={styles.noStopsText}>No stop sequence available</Text>
+            ) : (
+              stops.map((stop: any, idx: number) => (
+                <View key={stop.stop_id || idx}>
+                  <View style={styles.stopItem}>
+                    <View style={styles.stopDot}>
+                      <Text style={styles.stopDotNum}>{idx + 1}</Text>
+                    </View>
+                    <View style={styles.stopInfo}>
+                      <Text style={styles.stopName}>{stop.stop_name}</Text>
+                      <Text style={styles.stopDistance}>
+                        Sequence #{stop.stop_order}
+                      </Text>
+                    </View>
                   </View>
-                  <Text style={styles.stopTime}>{stop.time}</Text>
+                  {idx < stops.length - 1 && (
+                    <View style={styles.stopLine} />
+                  )}
                 </View>
-                {idx < mockStops.length - 1 && (
-                  <View style={styles.stopLine} />
-                )}
-              </View>
-            ))}
-          </Card.Content>
-        </Card>
-
-        {/* Features Card */}
-        <Card style={styles.featuresCard}>
-          <Card.Title title="Safety Features" titleStyle={styles.cardTitle} />
-          <Divider />
-          <Card.Content>
-            <View style={styles.featureRow}>
-              <Text style={styles.featureLabel}>Live Tracking</Text>
-              <Icon source="check-circle" size={20} color={CONSTANTS.Colors.success} />
-            </View>
-            <Divider style={styles.divider} />
-            <View style={styles.featureRow}>
-              <Text style={styles.featureLabel}>Women Safety Features</Text>
-              <Icon source="check-circle" size={20} color={CONSTANTS.Colors.success} />
-            </View>
-            <Divider style={styles.divider} />
-            <View style={styles.featureRow}>
-              <Text style={styles.featureLabel}>Driver Verified</Text>
-              <Icon source="check-circle" size={20} color={CONSTANTS.Colors.success} />
-            </View>
+              ))
+            )}
           </Card.Content>
         </Card>
 
@@ -177,34 +213,26 @@ export default function BusDetailsScreen({ route, navigation }: any) {
             mode="contained"
             buttonColor={CONSTANTS.Colors.primary}
             style={styles.primaryButton}
-            onPress={handleSetAlert}
+            onPress={handleTrackOnMap}
           >
-            Set Alert
+            🗺️ Track on Map
           </Button>
           <Button
             mode="outlined"
             style={styles.secondaryButton}
-            onPress={handleTripSharing}
+            onPress={handleSetAlert}
           >
-            {tripSharing ? 'Stop Sharing' : 'Share Trip'}
+            🔔 Set Alert
           </Button>
         </View>
 
-        {/* Rating Card */}
-        <Card style={styles.ratingCard}>
-          <Card.Title title="Rating & Reviews" titleStyle={styles.cardTitle} />
-          <Divider />
-          <Card.Content>
-            <View style={styles.ratingSection}>
-              <Text style={styles.ratingValue}>4.5</Text>
-              <Text style={styles.ratingStars}>★★★★★</Text>
-              <Text style={styles.ratingCount}>(324 ratings)</Text>
-            </View>
-            <TouchableOpacity style={styles.reviewButton}>
-              <Text style={styles.reviewButtonText}>Write a Review</Text>
-            </TouchableOpacity>
-          </Card.Content>
-        </Card>
+        <Button
+          mode="outlined"
+          style={{ borderColor: CONSTANTS.Colors.primary }}
+          onPress={handleTripSharing}
+        >
+          {tripSharing ? 'Stop Sharing' : '📲 Share Live Trip Link'}
+        </Button>
       </ScrollView>
     </View>
   )
@@ -237,7 +265,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   routeNumber: {
-    fontSize: 36,
+    fontSize: 28,
     fontWeight: '900',
     color: CONSTANTS.Colors.primary,
   },
@@ -250,7 +278,7 @@ const styles = StyleSheet.create({
   endpoint: {
     flex: 1,
     fontSize: 13,
-    fontWeight: '500',
+    fontWeight: '600',
     color: '#333',
   },
   arrow: {
@@ -274,10 +302,10 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   statValue: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
     color: CONSTANTS.Colors.primary,
-    marginBottom: 4,
+    marginBottom: 2,
   },
   statLabel: {
     fontSize: 11,
@@ -325,10 +353,17 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   stopDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
     backgroundColor: CONSTANTS.Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stopDotNum: {
+    color: '#FFF',
+    fontSize: 10,
+    fontWeight: '800',
   },
   stopInfo: {
     flex: 1,
@@ -340,35 +375,22 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   stopDistance: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#999',
   },
-  stopTime: {
+  noStopsText: {
+    color: '#999',
     fontSize: 12,
-    fontWeight: '600',
-    color: CONSTANTS.Colors.primary,
+    textAlign: 'center',
+    marginVertical: 12,
   },
   stopLine: {
     position: 'absolute',
-    left: 5.5,
+    left: 10.5,
     top: 24,
     width: 1,
     height: 36,
     backgroundColor: '#DDD',
-  },
-  featuresCard: {
-    backgroundColor: '#fff',
-  },
-  featureRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 12,
-  },
-  featureLabel: {
-    fontSize: 13,
-    color: '#333',
-    fontWeight: '500',
   },
   actionButtons: {
     flexDirection: 'row',
@@ -380,39 +402,5 @@ const styles = StyleSheet.create({
   secondaryButton: {
     flex: 1,
     borderColor: CONSTANTS.Colors.primary,
-  },
-  ratingCard: {
-    backgroundColor: '#fff',
-    marginBottom: 20,
-  },
-  ratingSection: {
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  ratingValue: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: CONSTANTS.Colors.primary,
-    marginBottom: 4,
-  },
-  ratingStars: {
-    fontSize: 18,
-    color: '#FFB800',
-    marginBottom: 4,
-  },
-  ratingCount: {
-    fontSize: 12,
-    color: '#999',
-  },
-  reviewButton: {
-    paddingVertical: 10,
-    borderRadius: 6,
-    backgroundColor: '#F0F0F0',
-    alignItems: 'center',
-  },
-  reviewButtonText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: CONSTANTS.Colors.primary,
   },
 })

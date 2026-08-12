@@ -98,7 +98,7 @@ export default function SOS() {
         {[
           { initial: 'DC', name: 'Depot Control', tag: 'Primary', color: BRAND.primary },
           { initial: 'EM', name: 'Emergency (112)', tag: 'National', color: BRAND.danger },
-        ].concat(trustedContacts.slice(0, 3)).map((c, i) => (
+        ].concat(trustedContacts.slice(0, 3) as any).map((c: any, i: number) => (
           <View key={i} style={styles.contactRow}>
             <View style={[styles.contactAvatar, { backgroundColor: (c as any).color || BRAND.primary }]}>
               <Text style={styles.contactInitial}>{(c as any).initial || c.name?.substring(0, 2)}</Text>
