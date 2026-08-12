@@ -77,16 +77,19 @@ export default class RouteService {
     preference: 'fastest' | 'cheapest' | 'least-crowded' = 'fastest'
   ): Promise<RouteResult[]> {
     try {
-      const routes = await this.getRoutes();
-      const buses = await this.getFleet();
+      const cleanFrom = (fromStop || '').trim();
+      const cleanTo = (toStop || '').trim();
+
+      const res = await axios.get(`${API_URL}/api/routes/search`, {
+        params: { from: cleanFrom, to: cleanTo },
+      });
+      const routes: Route[] = Array.isArray(res.data) ? res.data : [];
 
       if (!routes.length) return [];
 
-      const cleanFrom = (fromStop || '').toLowerCase().trim();
-      const cleanTo = (toStop || '').toLowerCase().trim();
+      const buses = await this.getFleet();
 
       const matchingRoutes = routes.map((route) => {
-        // Find matching live bus on this route
         const bus = buses.find((b) => b.route_id === route.id || b.route_number === route.route_number) || {
           id: route.id,
           license_plate: `BUS00${route.id}`,
@@ -102,23 +105,9 @@ export default class RouteService {
         const occCount = bus.occupancy || 15;
         const crowdPercent = Math.min(100, Math.round((occCount / capacity) * 100));
 
-        // Estimate ETA in minutes from speed or ETA seconds
         const etaMinutes = bus.eta_seconds ? Math.max(1, Math.round(bus.eta_seconds / 60)) : Math.max(4, 12 - route.id);
         const fare = 15 + route.id * 2;
         const distance = 3.5 + route.id * 1.5;
-
-        // Match relevance: route start/end matches search query or default list
-        const matchesQuery =
-          cleanFrom === '' ||
-          cleanTo === '' ||
-          route.route_name.toLowerCase().includes(cleanFrom) ||
-          route.route_name.toLowerCase().includes(cleanTo) ||
-          route.start_stop.toLowerCase().includes(cleanFrom) ||
-          route.end_stop.toLowerCase().includes(cleanTo);
-
-        if (!matchesQuery && cleanFrom !== 'current location') {
-          return null;
-        }
 
         return {
           route,
@@ -129,7 +118,7 @@ export default class RouteService {
           femaleOnly: route.id % 2 === 1,
           distance,
         };
-      }).filter(Boolean) as RouteResult[];
+      });
 
       if (preference === 'fastest') {
         return matchingRoutes.sort((a, b) => a.eta - b.eta);
