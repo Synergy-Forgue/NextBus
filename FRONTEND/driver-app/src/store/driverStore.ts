@@ -9,14 +9,81 @@ import {
   mockTrips,
   mockBreakdownIncidents,
   mockSOSEvents,
+  Driver,
+  Bus,
+  DriverRoute,
+  Stop,
+  Conductor,
+  Earnings,
+  TripHistoryItem,
+  Incident,
+  SOSEvent,
 } from '../data/mockData';
 
-export const useDriverStore = create((set) => ({
+export interface CurrentTripState {
+  id: string;
+  startTime: Date;
+  startStopId?: string | number;
+  startStopName: string;
+  currentStopOrder: number;
+  passengersBoarded: number;
+  passengersAlighted: number;
+  stopHistory: any[];
+}
+
+export interface CurrentLocationState {
+  lat: number;
+  lng: number;
+  speed: number;
+  heading: number;
+  accuracy: number;
+}
+
+export interface DriverStoreState {
+  driver: Driver | null;
+  conductor: Conductor | null;
+  bus: Bus | null;
+  route: DriverRoute | null;
+  stops: Stop[];
+  activeTripId: number | null;
+  occupancy: number;
+  pendingPhone: string | null;
+  currentTrip: CurrentTripState | null;
+  currentLocation: CurrentLocationState;
+  isOnline: boolean;
+  isLoggedIn: boolean;
+  earnings: Earnings;
+  tripHistory: TripHistoryItem[];
+  breakdownIncidents: Incident[];
+  sosEvents: SOSEvent[];
+
+  setActiveTripId: (tripId: number | null) => void;
+  setOccupancy: (count: number) => void;
+  setPendingPhone: (phone: string | null) => void;
+  setRealStops: (stops: Stop[]) => void;
+  loginDriver: (phone?: string, password?: string) => void;
+  logoutDriver: () => void;
+  goOnline: () => void;
+  goOffline: () => void;
+  updateLocation: (lat: number, lng: number, speed: number, heading: number) => void;
+  simulateLocationUpdate: () => void;
+  startTrip: (startStopId?: string | number) => void;
+  endTrip: () => void;
+  updatePassengersBoarded: (count: number) => void;
+  updatePassengersAlighted: (count: number) => void;
+  moveToNextStop: () => void;
+  reportBreakdown: (description: string) => void;
+  triggerSOS: (type: string, description: string) => void;
+  linkConductor: (conductorPhone: string) => void;
+  unlinkConductor: () => void;
+}
+
+export const useDriverStore = create<DriverStoreState>((set) => ({
   // Driver data
   driver: null,
   conductor: null,
   bus: mockBus,
-  // Pilot route — matches the backend's seeded Vizag data (route 10K / BUS001 / Ravi Kumar)
+  // Pilot route — matches backend seeded data (route 10K / BUS001 / Ravi Kumar)
   route: {
     ...mockRoute,
     id: 1,
@@ -25,20 +92,25 @@ export const useDriverStore = create((set) => ({
   },
   stops: mockStops,
 
-  // The backend trip_id of the running trip; the GPS Ping publisher keys off this
+  // Backend trip_id of active trip; keys GPS Ping publisher
   activeTripId: null,
-  setActiveTripId: (tripId) => set({ activeTripId: tripId }),
+  setActiveTripId: (tripId: number | null) =>
+    set({
+      activeTripId: tripId,
+      // Setting active trip also sets isOnline so GPS tracking is active
+      isOnline: !!tripId,
+    }),
 
-  // Live passenger count (conductor taps) — sent inside every GPS telemetry ping
+  // Live passenger count (conductor taps) — sent in telemetry ping
   occupancy: 0,
-  setOccupancy: (count) => set({ occupancy: Math.max(0, count) }),
+  setOccupancy: (count: number) => set({ occupancy: Math.max(0, count) }),
 
-  // Phone captured at login, verified at the OTP step
+  // Phone captured at login
   pendingPhone: null,
-  setPendingPhone: (phone) => set({ pendingPhone: phone }),
+  setPendingPhone: (phone: string | null) => set({ pendingPhone: phone }),
 
-  // Replace mock stops with the real route stops fetched from the backend
-  setRealStops: (stops) => set({ stops }),
+  // Replace mock stops with real route stops fetched from backend
+  setRealStops: (stops: Stop[]) => set({ stops }),
 
   // Trip state
   currentTrip: null,
@@ -63,9 +135,7 @@ export const useDriverStore = create((set) => ({
   sosEvents: mockSOSEvents,
 
   // Actions
-  loginDriver: (phone, password) => {
-    // Keep the real phone the driver typed — the backend looks drivers up by
-    // phone in POST /api/trips/start (seeded pilot driver: 9876543210)
+  loginDriver: (phone?: string, password?: string) => {
     const cleanPhone = (phone || '').replace(/\D/g, '').slice(-10);
     set({
       driver: { ...mockDriver, phone: cleanPhone || mockDriver.phone },
@@ -78,21 +148,20 @@ export const useDriverStore = create((set) => ({
       driver: null,
       isLoggedIn: false,
       isOnline: false,
+      activeTripId: null,
       currentTrip: null,
     });
   },
 
   goOnline: () => {
     set({ isOnline: true });
-    // Start GPS simulation
   },
 
   goOffline: () => {
     set({ isOnline: false });
-    // Stop GPS simulation
   },
 
-  updateLocation: (lat, lng, speed, heading) => {
+  updateLocation: (lat: number, lng: number, speed: number, heading: number) => {
     set({
       currentLocation: {
         lat,
@@ -123,10 +192,11 @@ export const useDriverStore = create((set) => ({
     });
   },
 
-  startTrip: (startStopId) => {
+  startTrip: (startStopId?: string | number) => {
     set((state) => {
       const startStop = state.stops.find((s) => s.id === startStopId);
       return {
+        isOnline: true,
         currentTrip: {
           id: `TRIP${Date.now()}`,
           startTime: new Date(),
@@ -143,22 +213,24 @@ export const useDriverStore = create((set) => ({
 
   endTrip: () => {
     set((state) => {
-      if (!state.currentTrip) return {};
-
       const trip = state.currentTrip;
-      const revenue = trip.passengersBoarded * state.route.fare;
-      const newTrip = {
+      if (!trip) return { activeTripId: null, isOnline: false };
+
+      const revenue = trip.passengersBoarded * (state.route?.fare || 25);
+      const newTrip: TripHistoryItem = {
         id: trip.id,
         date: trip.startTime.toISOString(),
         startStop: trip.startStopName,
         endStop: state.stops[state.stops.length - 1]?.name || 'Unknown',
         passengers: trip.passengersBoarded,
         revenue: revenue,
-        distance: state.route.distance,
-        duration: Math.floor((new Date() - trip.startTime) / 60000),
+        distance: state.route?.distance || 25.5,
+        duration: Math.floor((Date.now() - trip.startTime.getTime()) / 60000),
       };
 
       return {
+        activeTripId: null,
+        isOnline: false,
         currentTrip: null,
         tripHistory: [newTrip, ...state.tripHistory],
         earnings: {
@@ -167,15 +239,15 @@ export const useDriverStore = create((set) => ({
             ...state.earnings.today,
             trips: state.earnings.today.trips + 1,
             revenue: state.earnings.today.revenue + revenue,
-            bonus: state.earnings.today.bonus + (revenue * 0.15),
-            total: state.earnings.today.total + revenue + (revenue * 0.15),
+            bonus: state.earnings.today.bonus + revenue * 0.15,
+            total: state.earnings.today.total + revenue + revenue * 0.15,
           },
         },
       };
     });
   },
 
-  updatePassengersBoarded: (count) => {
+  updatePassengersBoarded: (count: number) => {
     set((state) => {
       if (!state.currentTrip) return {};
       return {
@@ -187,7 +259,7 @@ export const useDriverStore = create((set) => ({
     });
   },
 
-  updatePassengersAlighted: (count) => {
+  updatePassengersAlighted: (count: number) => {
     set((state) => {
       if (!state.currentTrip) return {};
       return {
@@ -218,8 +290,8 @@ export const useDriverStore = create((set) => ({
     });
   },
 
-  reportBreakdown: (description) => {
-    const incident = {
+  reportBreakdown: (description: string) => {
+    const incident: Incident = {
       id: `INC${Date.now()}`,
       date: new Date().toISOString(),
       description: description,
@@ -232,8 +304,8 @@ export const useDriverStore = create((set) => ({
     }));
   },
 
-  triggerSOS: (type, description) => {
-    const sosEvent = {
+  triggerSOS: (type: string, description: string) => {
+    const sosEvent: SOSEvent = {
       id: `SOS${Date.now()}`,
       date: new Date().toISOString(),
       type: type,
@@ -248,7 +320,7 @@ export const useDriverStore = create((set) => ({
     }));
   },
 
-  linkConductor: (conductorPhone) => {
+  linkConductor: (conductorPhone: string) => {
     set({
       conductor: {
         ...mockConductor,

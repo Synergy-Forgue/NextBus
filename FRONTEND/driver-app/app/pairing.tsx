@@ -82,7 +82,9 @@ export default function Pairing() {
       const cleanPhone = (driver.phone || '').replace(/\D/g, '').slice(-10);
       const trip = await tripService.startTrip(route.number, cleanPhone);
       const tripId = trip.id || trip.trip_id;
-      useDriverStore.getState().setActiveTripId(tripId);
+      if (tripId) {
+        useDriverStore.getState().setActiveTripId(tripId);
+      }
       router.replace('/(tabs)');
     } catch (err: any) {
       console.error('❌ Begin Trip Error:', err.message);

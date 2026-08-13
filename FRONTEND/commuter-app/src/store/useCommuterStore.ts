@@ -1,8 +1,21 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+export type VehicleStatus = 'LIVE' | 'APPROACHING STOP' | 'AT STOP' | 'STALE' | 'SIGNAL LOST' | 'OFFLINE';
+
+export interface StopEta {
+  stop_id: number;
+  stop_name: string;
+  latitude: number;
+  longitude: number;
+  stop_order: number;
+  eta_seconds: number | null;
+}
+
 export interface BusPosition {
   busId: string;
+  trip_id?: number;
+  route_id?: number;
   lat: number;
   lng: number;
   routeNo: string;
@@ -13,6 +26,11 @@ export interface BusPosition {
   route_number?: string;
   bus_number?: string;
   occupancy?: number;
+  occupancy_count?: number;
+  status?: VehicleStatus;
+  nextStopIndex?: number;
+  last_updated?: string;
+  stop_etas?: StopEta[];
 }
 
 export interface UserLocation {
@@ -48,6 +66,7 @@ export interface RouteItem {
   frequency?: number;
   lastUsed?: number;
   filterPreference?: 'fastest' | 'cheapest' | 'least-crowded';
+  stops?: any[];
 }
 
 export interface TrustedContact {
@@ -58,6 +77,17 @@ export interface TrustedContact {
   initial?: string;
   tag?: string;
   color?: string;
+}
+
+export interface BusPass {
+  id: string;
+  type: 'Monthly' | 'Weekly' | 'Daily';
+  title: string;
+  price: number;
+  purchaseDate: string;
+  expiryDate: string;
+  status: 'ACTIVE' | 'EXPIRED';
+  qrCode: string;
 }
 
 interface CommuterStoreState {
@@ -77,6 +107,9 @@ interface CommuterStoreState {
   commuter: UserProfile | null;
   isLoggedIn: boolean;
   pendingPhone: string | null;
+
+  // Active Bus Pass
+  activePass: BusPass | null;
 
   // Alerts & Notifications
   activeAlerts: Alert[];
@@ -104,6 +137,8 @@ interface CommuterStoreState {
   setSelectedStop: (stop: any | null) => void;
   setActiveTripId: (tripId: number | string | null) => void;
   setTripSharingActive: (active: boolean) => void;
+  setActivePass: (pass: BusPass | null) => void;
+  loadActivePass: () => Promise<void>;
 
   setUserLocation: (lat: number, lng: number) => void;
   setUserProfile: (profile: UserProfile | null) => void;
@@ -138,6 +173,7 @@ interface CommuterStoreState {
 const STORAGE_SAVED_ROUTES = '@nxtbus_saved_routes';
 const STORAGE_CONTACTS = '@nxtbus_trusted_contacts';
 const STORAGE_PROFILE = '@nxtbus_user_profile';
+const STORAGE_PASS = '@nxtbus_active_pass';
 
 export const useCommuterStore = create<CommuterStoreState>((set, get) => ({
   // Initial State
@@ -153,6 +189,8 @@ export const useCommuterStore = create<CommuterStoreState>((set, get) => ({
   commuter: null,
   isLoggedIn: false,
   pendingPhone: null,
+
+  activePass: null,
 
   activeAlerts: [],
   pushEnabled: true,
@@ -194,6 +232,24 @@ export const useCommuterStore = create<CommuterStoreState>((set, get) => ({
   setSelectedStop: (stop) => set({ selectedStop: stop }),
   setActiveTripId: (tripId) => set({ activeTripId: tripId }),
   setTripSharingActive: (active) => set({ tripSharingActive: active }),
+
+  setActivePass: (pass) => {
+    set({ activePass: pass });
+    if (pass) {
+      AsyncStorage.setItem(STORAGE_PASS, JSON.stringify(pass)).catch(() => {});
+    } else {
+      AsyncStorage.removeItem(STORAGE_PASS).catch(() => {});
+    }
+  },
+
+  loadActivePass: async () => {
+    try {
+      const data = await AsyncStorage.getItem(STORAGE_PASS);
+      if (data) {
+        set({ activePass: JSON.parse(data) });
+      }
+    } catch {}
+  },
 
   setUserLocation: (lat, lng) => set({ userLocation: { lat, lng } }),
 
@@ -320,6 +376,7 @@ export const useCommuterStore = create<CommuterStoreState>((set, get) => ({
       userProfile: null,
       commuter: null,
       isLoggedIn: false,
+      activePass: null,
       activeAlerts: [],
       savedRoutes: [],
       trustedContacts: [],
@@ -330,3 +387,4 @@ export const useCommuterStore = create<CommuterStoreState>((set, get) => ({
 }));
 
 export default useCommuterStore;
+

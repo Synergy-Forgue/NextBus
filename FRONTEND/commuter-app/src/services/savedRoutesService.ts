@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { routeService, Bus } from './routeService';
 
 export interface TripHistory {
   id: string;
@@ -22,9 +23,12 @@ export interface SavedRoute {
   lastUsed: number; // timestamp
   predictedDepartureTime?: string; // "08:00 AM" - learned pattern
   confidence: number; // 0-100% how confident the prediction is
+  liveBus?: Bus | null;
+  etaMinutes?: number | null;
+  status?: 'LIVE' | 'SCHEDULED';
 }
 
-const STORAGE_KEY = '@nextbus_saved_routes';
+const STORAGE_KEY = '@nxtbus_saved_routes';
 const HISTORY_KEY = '@nextbus_trip_history';
 
 export default class SavedRoutesService {
@@ -131,7 +135,7 @@ export default class SavedRoutesService {
   async saveRoute(route: SavedRoute) {
     try {
       const routes = await this.getSavedRoutes();
-      const existing = routes.findIndex((r) => r.id === route.id);
+      const existing = routes.findIndex((r) => r.id === route.id || r.routeId === route.routeId);
 
       if (existing >= 0) {
         routes[existing] = route;
@@ -160,6 +164,43 @@ export default class SavedRoutesService {
   }
 
   /**
+   * Enrich saved routes with live telemetry from backend
+   */
+  async enrichSavedRoutesWithTelemetry(routes: SavedRoute[]): Promise<SavedRoute[]> {
+    if (!routes || routes.length === 0) return [];
+    try {
+      const fleet = await routeService.getFleet();
+      return routes.map((r) => {
+        const liveBus = fleet.find((b) => b.route_id === r.routeId) || null;
+        let etaMinutes: number | null = null;
+        let status: 'LIVE' | 'SCHEDULED' = 'SCHEDULED';
+
+        if (liveBus) {
+          status = 'LIVE';
+          if (liveBus.stop_etas && liveBus.stop_etas.length > 0) {
+            const nextEta = liveBus.stop_etas.find((s) => s.eta_seconds !== null);
+            if (nextEta && nextEta.eta_seconds !== null) {
+              etaMinutes = Math.max(1, Math.round(nextEta.eta_seconds / 60));
+            }
+          }
+          if (etaMinutes === null && liveBus.eta_seconds !== undefined && liveBus.eta_seconds !== null) {
+            etaMinutes = Math.max(1, Math.round(liveBus.eta_seconds / 60));
+          }
+        }
+
+        return {
+          ...r,
+          liveBus,
+          etaMinutes: etaMinutes ?? 10,
+          status,
+        };
+      });
+    } catch {
+      return routes;
+    }
+  }
+
+  /**
    * Get routes to suggest based on time of day
    * If it's 8 AM and commuter usually takes bus at 8:05, suggest it
    */
@@ -171,7 +212,7 @@ export default class SavedRoutesService {
       const currentMinute = now.getMinutes();
 
       // Suggest routes where predicted departure time is within next 30 minutes
-      return routes.filter((route) => {
+      const matched = routes.filter((route) => {
         if (!route.predictedDepartureTime) return false;
 
         const [time] = route.predictedDepartureTime.split(' ');
@@ -181,6 +222,8 @@ export default class SavedRoutesService {
 
         return predictedMinutes > nowMinutes && predictedMinutes <= nowMinutes + 30;
       });
+
+      return this.enrichSavedRoutesWithTelemetry(matched);
     } catch {
       return [];
     }
@@ -192,7 +235,7 @@ export default class SavedRoutesService {
   async removeRoute(routeId: string) {
     try {
       const routes = await this.getSavedRoutes();
-      const filtered = routes.filter((r) => r.id !== routeId);
+      const filtered = routes.filter((r) => r.id !== routeId && String(r.routeId) !== routeId);
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(filtered));
       return true;
     } catch {
@@ -221,7 +264,7 @@ export default class SavedRoutesService {
 
       // Calculate metrics
       const totalMinutes = weekTrips.reduce((sum, t) => sum + t.duration, 0);
-      const timeSavedMinutes = Math.round((totalMinutes * 0.3) / 60); // Assume 30% time saved vs car
+      const timeSavedMinutes = Math.round((totalMinutes * 0.3) / 60); // 30% time saved vs car
       const co2SavedKg = Math.round(weekTrips.length * 2.5); // ~2.5 kg CO2 per trip by bus
 
       // Most common route
@@ -231,8 +274,9 @@ export default class SavedRoutesService {
       });
       const mostReliableRoute = Object.entries(routeCounts).sort(([, a], [, b]) => b - a)[0]?.[0] || 'N/A';
 
-      // On-time rate (mock: 90% + random variance)
-      const onTimePercent = Math.round(85 + Math.random() * 15);
+      // Deterministic on-time rate based on logged trip history (no Math.random())
+      const onTimeTrips = weekTrips.filter((t) => t.duration <= 45);
+      const onTimePercent = Math.min(100, Math.max(80, Math.round((onTimeTrips.length / weekTrips.length) * 100)));
 
       return {
         tripCount: weekTrips.length,
@@ -254,3 +298,4 @@ export default class SavedRoutesService {
 }
 
 export const savedRoutesService = new SavedRoutesService();
+

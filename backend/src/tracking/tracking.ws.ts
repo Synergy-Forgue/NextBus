@@ -4,7 +4,7 @@ import { Server } from 'http';
 import { pool } from '../db/pool';
 import { TelemetryPayload, LiveBusState, RouteStop } from '../types';
 import { updateBusState, getAllBusStates, getBusState, removeBusState } from './liveState';
-import { getRouteStopsForTrip, calculateStopEtas } from './eta.service';
+import { getRouteStopsForTrip, calculateStopEtas, deriveVehicleStatus } from './eta.service';
 import { haversineKm } from '../utils/haversine';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -114,9 +114,29 @@ async function broadcastUpdate(state: LiveBusState, stops: RouteStop[]): Promise
     state.speed
   );
 
+  const nextStop = stops[state.nextStopIndex];
+  const distToNextStop = nextStop
+    ? haversineKm(state.latitude, state.longitude, nextStop.latitude, nextStop.longitude)
+    : null;
+
+  const status = deriveVehicleStatus(
+    state.speed,
+    state.last_updated,
+    distToNextStop,
+    state.vision_confidence_score
+  );
+
+  const updatedState: LiveBusState = {
+    ...state,
+    status,
+    stop_etas: stopEtas,
+  };
+
+  updateBusState(updatedState);
+
   const message = {
     type: 'BUS_UPDATE',
-    data: { ...state, stop_etas: stopEtas },
+    data: updatedState,
   };
 
   subscribers.forEach((routeFilter, client) => {
@@ -132,10 +152,12 @@ async function broadcastUpdate(state: LiveBusState, stops: RouteStop[]): Promise
 // ─── Fetch trip meta from DB ──────────────────────────────────────────────────
 async function getTripMeta(
   trip_id: number
-): Promise<{ bus_id: number; route_id: number; license_plate: string } | null> {
+): Promise<{ bus_id: number; route_id: number; route_number: string; license_plate: string } | null> {
   const result = await pool.query(
-    `SELECT t.bus_id, t.route_id, b.license_plate
-     FROM trips t JOIN buses b ON b.id = t.bus_id
+    `SELECT t.bus_id, t.route_id, r.route_number, b.license_plate
+     FROM trips t
+     JOIN buses b ON b.id = t.bus_id
+     JOIN routes r ON r.id = t.route_id
      WHERE t.id = $1 AND t.status = 'active'`,
     [trip_id]
   );
@@ -193,11 +215,32 @@ export function attachWebSocketServer(httpServer: Server): void {
         // Advance the next stop index if the bus is close enough
         const nextStopIndex = computeNextStopIndex(prevNextStopIndex, stops, latitude, longitude);
 
+        const nextStop = stops[nextStopIndex];
+        const distToNextStop = nextStop
+          ? haversineKm(latitude, longitude, nextStop.latitude, nextStop.longitude)
+          : null;
+
+        const status = deriveVehicleStatus(
+          speed ?? 0,
+          recorded_at || Date.now(),
+          distToNextStop,
+          vision_confidence_score
+        );
+
+        const stop_etas = calculateStopEtas(
+          stops,
+          nextStopIndex,
+          latitude,
+          longitude,
+          speed ?? 0
+        );
+
         // Build the live state object
         const liveState: LiveBusState = {
           trip_id,
           bus_id:                   meta.bus_id,
           route_id:                 meta.route_id,
+          route_number:             meta.route_number,
           license_plate:            meta.license_plate,
           latitude,
           longitude,
@@ -206,6 +249,8 @@ export function attachWebSocketServer(httpServer: Server): void {
           vision_confidence_score:  vision_confidence_score ?? 0,
           last_updated:             new Date(recorded_at || Date.now()),
           nextStopIndex,
+          status,
+          stop_etas,
         };
 
         // Update in-memory state
@@ -246,11 +291,12 @@ export function attachWebSocketServer(httpServer: Server): void {
       subscribers.set(ws, routeFilter);
       console.log(`[WS] Subscriber connected (route_id: ${routeFilter})`);
 
-      // Immediately send a snapshot of all currently tracked buses on connect
-      const snapshot = getAllBusStates().filter(
-        (b) => routeFilter === 'all' || b.route_id === routeFilter
-      );
-      send(ws, { type: 'SNAPSHOT', data: snapshot });
+      // Immediately send snapshot with computed status and stop_etas
+      getFleetWithEtas(routeFilter).then((snapshot) => {
+        send(ws, { type: 'SNAPSHOT', data: snapshot });
+      }).catch((err) => {
+        console.error('[WS] Snapshot error:', err);
+      });
 
       ws.on('close', () => {
         subscribers.delete(ws);
@@ -265,23 +311,40 @@ export function attachWebSocketServer(httpServer: Server): void {
     }
   });
 
-  // ── Periodic Stale Fleet Cleanup Worker (60s threshold) ──
-  setInterval(() => {
+  // ── Periodic Stale Fleet Cleanup Worker (60s STALE threshold, 120s OFFLINE threshold) ──
+  setInterval(async () => {
     const now = Date.now();
     const STALE_THRESHOLD_MS = 60000;
-    getAllBusStates().forEach((bus) => {
+    const OFFLINE_THRESHOLD_MS = 120000;
+
+    const fleet = getAllBusStates();
+    for (const bus of fleet) {
       const last = new Date(bus.last_updated).getTime();
-      if (now - last > STALE_THRESHOLD_MS) {
-        console.log(`[WS] Purging stale bus ${bus.license_plate} (trip #${bus.trip_id})`);
+      const ageMs = now - last;
+
+      if (ageMs > OFFLINE_THRESHOLD_MS) {
+        console.log(`[WS] Purging offline bus ${bus.license_plate} (trip #${bus.trip_id})`);
         broadcastBusOffline(bus.trip_id);
+      } else if (ageMs > STALE_THRESHOLD_MS) {
+        if (bus.status !== 'STALE') {
+          console.log(`[WS] Marking bus ${bus.license_plate} as STALE (trip #${bus.trip_id})`);
+          bus.status = 'STALE';
+          updateBusState(bus);
+
+          const stops = routeStopsCache.get(bus.route_id)
+            ?? await getRouteStopsForTrip(bus.trip_id);
+          await broadcastUpdate(bus, stops);
+        }
       }
-    });
-  }, 30000);
+    }
+  }, 10000);
 }
 
-// ─── Fleet Snapshot with ETAs (for REST endpoint) ─────────────────────────────
-export async function getFleetWithEtas(): Promise<object[]> {
-  const fleet = getAllBusStates();
+// ─── Fleet Snapshot with ETAs & Status (for REST endpoint) ──────────────────
+export async function getFleetWithEtas(routeFilter: number | 'all' = 'all'): Promise<LiveBusState[]> {
+  const fleet = getAllBusStates().filter(
+    (b) => routeFilter === 'all' || b.route_id === routeFilter
+  );
   const results = await Promise.all(
     fleet.map(async (state) => {
       const stops = routeStopsCache.get(state.route_id)
@@ -290,7 +353,19 @@ export async function getFleetWithEtas(): Promise<object[]> {
         stops, state.nextStopIndex,
         state.latitude, state.longitude, state.speed
       );
-      return { ...state, stop_etas };
+      const nextStop = stops[state.nextStopIndex];
+      const distToNextStop = nextStop
+        ? haversineKm(state.latitude, state.longitude, nextStop.latitude, nextStop.longitude)
+        : null;
+      const status = deriveVehicleStatus(
+        state.speed,
+        state.last_updated,
+        distToNextStop,
+        state.vision_confidence_score
+      );
+      const updatedState: LiveBusState = { ...state, status, stop_etas };
+      updateBusState(updatedState);
+      return updatedState;
     })
   );
   return results;

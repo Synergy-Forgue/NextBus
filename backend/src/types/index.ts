@@ -60,19 +60,33 @@ export interface TripDetail extends Trip {
   driver_name: string;
 }
 
+export type VehicleStatus = 'LIVE' | 'APPROACHING STOP' | 'AT STOP' | 'STALE' | 'SIGNAL LOST' | 'OFFLINE';
+
+export interface StopEta {
+  stop_id: number;
+  stop_name: string;
+  latitude: number;
+  longitude: number;
+  stop_order: number;
+  eta_seconds: number | null; // null if passed
+}
+
 // Live state of a bus, held in-memory by the tracking module
 export interface LiveBusState {
   trip_id: number;
   bus_id: number;
   route_id: number;
+  route_number: string;
   license_plate: string;
   latitude: number;
   longitude: number;
   speed: number;
   occupancy_count: number;
   vision_confidence_score: number;
-  last_updated: Date;
+  last_updated: Date | string;
   nextStopIndex: number; // index into the route's stop array the bus is currently heading towards
+  status: VehicleStatus;
+  stop_etas?: StopEta[];
 }
 
 // Payload sent over WebSocket from Driver App / Simulator

@@ -18,8 +18,12 @@ export interface TelemetryLocation {
   longitude: number;
   /** metres per second (as reported by expo-location) */
   speed: number;
+  heading?: number;
+  bearing?: number;
   timestamp: number;
 }
+
+export type TelemetryStatus = 'LIVE' | 'READY' | 'OFFLINE';
 
 export const useTelemetry = (
   tripId: number | null,
@@ -35,6 +39,10 @@ export const useTelemetry = (
   // Connect / disconnect with the active trip
   useEffect(() => {
     if (!tripId) {
+      if (reconnectTimer.current) {
+        clearTimeout(reconnectTimer.current);
+        reconnectTimer.current = null;
+      }
       wsRef.current?.close();
       wsRef.current = null;
       setIsConnected(false);
@@ -50,6 +58,10 @@ export const useTelemetry = (
         wsRef.current = ws;
 
         ws.onopen = () => {
+          if (cancelled) {
+            ws.close();
+            return;
+          }
           setIsConnected(true);
           setError(null);
           console.log('[Telemetry] Connected to', WS_URL);
@@ -66,18 +78,25 @@ export const useTelemetry = (
         };
 
         ws.onerror = () => {
+          setIsConnected(false);
           setError('Telemetry connection error');
         };
 
         ws.onclose = () => {
           setIsConnected(false);
-          // Retry while the trip is still active
+          // Retry while the trip is still active with 3s reconnect interval
           if (!cancelled) {
+            if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
             reconnectTimer.current = setTimeout(connect, 3000);
           }
         };
       } catch (err) {
+        setIsConnected(false);
         setError('Failed to open telemetry socket');
+        if (!cancelled) {
+          if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
+          reconnectTimer.current = setTimeout(connect, 3000);
+        }
       }
     };
 
@@ -85,7 +104,10 @@ export const useTelemetry = (
 
     return () => {
       cancelled = true;
-      if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
+      if (reconnectTimer.current) {
+        clearTimeout(reconnectTimer.current);
+        reconnectTimer.current = null;
+      }
       wsRef.current?.close();
       wsRef.current = null;
       setIsConnected(false);
@@ -105,6 +127,8 @@ export const useTelemetry = (
       // expo-location reports m/s; backend expects km/h
       speed: Math.max(0, (location.speed || 0) * 3.6),
       occupancy_count: occupancyCount,
+      heading: location.heading ?? location.bearing ?? 0,
+      bearing: location.heading ?? location.bearing ?? 0,
       // Manual count from the conductor → full confidence per the MVP spec
       vision_confidence_score: 1.0,
       recorded_at: new Date(location.timestamp || Date.now()).toISOString(),
@@ -113,5 +137,11 @@ export const useTelemetry = (
     ws.send(JSON.stringify(payload));
   }, [tripId, location, occupancyCount]);
 
-  return { isConnected, lastAck, error };
+  const status: TelemetryStatus = !tripId
+    ? 'READY'
+    : isConnected
+    ? 'LIVE'
+    : 'OFFLINE';
+
+  return { isConnected, lastAck, error, status };
 };

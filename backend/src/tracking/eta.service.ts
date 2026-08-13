@@ -1,14 +1,34 @@
 import { pool } from '../db/pool';
-import { RouteStop } from '../types';
+import { RouteStop, StopEta, VehicleStatus } from '../types';
 import { etaSeconds } from '../utils/haversine';
 
-export interface StopEta {
-  stop_id:     number;
-  stop_name:   string;
-  latitude:    number;
-  longitude:   number;
-  stop_order:  number;
-  eta_seconds: number | null; // null = already passed
+export { StopEta };
+
+/**
+ * Computes explicit vehicle status ('LIVE', 'APPROACHING STOP', 'AT STOP', 'STALE', 'SIGNAL LOST', 'OFFLINE')
+ * based on speed, distance to next stop (<150m), vision confidence, and age of last_updated.
+ */
+export function deriveVehicleStatus(
+  speedKmh: number,
+  lastUpdated: Date | string | number,
+  distToNextStopKm?: number | null,
+  visionConfidence?: number,
+  nowMs: number = Date.now()
+): VehicleStatus {
+  const lastMs = new Date(lastUpdated).getTime();
+  const ageMs = nowMs - lastMs;
+
+  if (ageMs > 120000) return 'OFFLINE';
+  if (ageMs > 60000) return 'STALE';
+  if (ageMs > 30000 || (visionConfidence !== undefined && visionConfidence < 0.3)) {
+    return 'SIGNAL LOST';
+  }
+
+  if (distToNextStopKm != null && distToNextStopKm < 0.15) {
+    return speedKmh <= 5 ? 'AT STOP' : 'APPROACHING STOP';
+  }
+
+  return 'LIVE';
 }
 
 /**

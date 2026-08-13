@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BRAND } from '@/src/styles/brand';
 import { savedRoutesService, SavedRoute } from '@/src/services/savedRoutesService';
-import { useCommuterStore } from '@/src/store/commuterStore';
+import { useCommuterStore } from '@/src/store/useCommuterStore';
 
 export default function SavedRoutesScreen() {
   const router = useRouter();
@@ -20,8 +20,9 @@ export default function SavedRoutesScreen() {
   const loadRoutes = async () => {
     try {
       const savedRoutes = await savedRoutesService.getSavedRoutes();
+      const enrichedSaved = await savedRoutesService.enrichSavedRoutesWithTelemetry(savedRoutes);
       const suggestedRoutes = await savedRoutesService.getSuggestedRoutesByTime();
-      setSaved(savedRoutes);
+      setSaved(enrichedSaved);
       setSuggested(suggestedRoutes);
     } finally {
       setLoading(false);
@@ -29,16 +30,36 @@ export default function SavedRoutesScreen() {
   };
 
   const handleStartTrip = (route: SavedRoute) => {
+    const numericId = typeof route.routeId === 'number' ? route.routeId : parseInt(String(route.routeId), 10);
     useCommuterStore.getState().setSelectedRoute({
-      route_number: route.routeId.toString(),
+      id: numericId,
+      route_number: String(route.routeId),
       route_name: route.routeName,
-      from_stop: route.fromStop,
-      to_stop: route.toStop,
+      start_stop: route.fromStop,
+      end_stop: route.toStop,
       frequency: route.frequency,
     });
+    if (route.liveBus) {
+      useCommuterStore.getState().setSelectedBus({
+        busId: String(route.liveBus.trip_id || route.liveBus.id || numericId),
+        trip_id: route.liveBus.trip_id,
+        route_id: numericId,
+        lat: route.liveBus.latitude,
+        lng: route.liveBus.longitude,
+        routeNo: String(route.routeId),
+        crowdLevel: Math.round((route.liveBus.occupancy_count ?? route.liveBus.occupancy ?? 10) / 5),
+        speed: route.liveBus.speed,
+        licensePlate: route.liveBus.license_plate,
+        status: route.liveBus.status || 'LIVE',
+        stop_etas: route.liveBus.stop_etas || [],
+      });
+    }
     addSavedRoute({
-      route_number: route.routeId.toString(),
+      id: numericId,
+      route_number: String(route.routeId),
       route_name: route.routeName,
+      start_stop: route.fromStop,
+      end_stop: route.toStop,
     });
     router.push('/(tabs)/map');
   };
@@ -63,7 +84,7 @@ export default function SavedRoutesScreen() {
         <TouchableOpacity onPress={() => router.back()}>
           <Text style={styles.back}>←</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>Your Routes</Text>
+        <Text style={styles.title}>Your Saved Routes</Text>
         <View style={{ width: 24 }} />
       </View>
 
@@ -84,7 +105,12 @@ export default function SavedRoutesScreen() {
             >
               <LinearGradient colors={BRAND.gradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ ...styles.routeCard, marginHorizontal: 16, marginBottom: 10 }}>
                 <View style={styles.routeLeft}>
-                  <Text style={{ ...styles.routeNum, color: '#FFFFFF' }}>Route {route.routeId}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={{ ...styles.routeNum, color: '#FFFFFF' }}>Route {route.routeId}</Text>
+                    <View style={{ backgroundColor: route.status === 'LIVE' ? '#10B981' : 'rgba(255,255,255,0.3)', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
+                      <Text style={{ color: '#FFF', fontSize: 9, fontWeight: '900' }}>{route.status === 'LIVE' ? 'LIVE' : 'SCHED'}</Text>
+                    </View>
+                  </View>
                   <Text style={{ ...styles.routeName, color: 'rgba(255,255,255,0.9)' }}>{route.routeName}</Text>
                   <Text style={{ ...styles.routeDistance, color: 'rgba(255,255,255,0.8)' }}>
                     {route.fromStop} → {route.toStop}
@@ -119,13 +145,27 @@ export default function SavedRoutesScreen() {
                 activeOpacity={0.8}
               >
                 <View style={styles.routeLeft}>
-                  <Text style={styles.routeNum}>Route {route.routeId}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+                    <Text style={styles.routeNum}>Route {route.routeId}</Text>
+                    <View
+                      style={{
+                        backgroundColor: route.status === 'LIVE' ? '#10B981' : '#6B7280',
+                        borderRadius: 6,
+                        paddingHorizontal: 6,
+                        paddingVertical: 2,
+                      }}
+                    >
+                      <Text style={{ color: '#FFF', fontSize: 9, fontWeight: '900' }}>
+                        {route.status === 'LIVE' ? '🟢 LIVE' : '🔘 SCHEDULED'}
+                      </Text>
+                    </View>
+                  </View>
                   <Text style={styles.routeName}>{route.routeName}</Text>
                   <Text style={styles.routeDistance}>
                     {route.fromStop} → {route.toStop}
                   </Text>
                   <Text style={{ fontSize: 11, color: BRAND.textSecondary, marginTop: 4 }}>
-                    Used {route.frequency}x • Last: {new Date(route.lastUsed).toLocaleDateString()}
+                    Used {route.frequency}x • Last: {new Date(route.lastUsed).toLocaleDateString()} • Next Bus: {route.etaMinutes ? `${route.etaMinutes}m` : 'Scheduled'}
                   </Text>
                 </View>
               </TouchableOpacity>
@@ -182,3 +222,4 @@ const styles = StyleSheet.create({
   routeName: { fontSize: 13, fontWeight: '700', color: BRAND.text, marginBottom: 2 },
   routeDistance: { fontSize: 11, color: BRAND.textSecondary },
 });
+

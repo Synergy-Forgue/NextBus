@@ -1,4 +1,93 @@
-export const mockDriver = {
+export interface Driver {
+  id: string;
+  name: string;
+  phone: string;
+  licenseNo: string;
+  yearsExperience: number;
+  rating: number;
+  totalTrips: number;
+  profileImage: string | null;
+}
+
+export interface Bus {
+  id: string;
+  regNo: string;
+  capacity: number;
+  makeModel: string;
+  status: string;
+  lat: number;
+  lng: number;
+}
+
+export interface DriverRoute {
+  id: string | number;
+  number: string;
+  name: string;
+  distance: number;
+  estimatedTime: number;
+  totalStops: number;
+  fare: number;
+}
+
+export interface Stop {
+  id: string | number;
+  name: string;
+  order: number;
+  lat: number;
+  lng: number;
+  isServed?: boolean;
+}
+
+export interface Conductor {
+  id: string;
+  name: string;
+  phone: string;
+  email?: string;
+}
+
+export interface EarningPeriod {
+  trips: number;
+  revenue: number;
+  bonus: number;
+  total: number;
+}
+
+export interface Earnings {
+  today: EarningPeriod;
+  week: EarningPeriod;
+  month: EarningPeriod;
+}
+
+export interface TripHistoryItem {
+  id: string;
+  date: string;
+  startStop: string;
+  endStop: string;
+  passengers: number;
+  revenue: number;
+  distance: number;
+  duration: number;
+}
+
+export interface Incident {
+  id: string;
+  date: string;
+  description: string;
+  status: string;
+  type: string;
+}
+
+export interface SOSEvent {
+  id: string;
+  date: string;
+  type: string;
+  description: string;
+  status: string;
+  lat: number;
+  lng: number;
+}
+
+export const mockDriver: Driver = {
   id: 'DRV001',
   name: 'Ravi Kumar',
   phone: '9876543210', // Seeded driver phone that exists in backend
@@ -9,7 +98,7 @@ export const mockDriver = {
   profileImage: null,
 };
 
-export const mockBus = {
+export const mockBus: Bus = {
   id: 'BUS001',
   regNo: 'AP09AB0001',
   capacity: 45,
@@ -19,8 +108,9 @@ export const mockBus = {
   lng: 78.4867,
 };
 
-export const mockRoute = {
+export const mockRoute: DriverRoute = {
   id: '9K',
+  number: '9K',
   name: 'Route 9K - Secunderabad to Airport',
   distance: 25.5,
   estimatedTime: 50,
@@ -28,7 +118,7 @@ export const mockRoute = {
   fare: 25,
 };
 
-export const mockStops = [
+export const mockStops: Stop[] = [
   {
     id: 'STOP001',
     name: 'Secunderabad Station',
@@ -79,14 +169,14 @@ export const mockStops = [
   },
 ];
 
-export const mockConductor = {
+export const mockConductor: Conductor = {
   id: 'CON001',
   name: 'Suresh Reddy',
   phone: '+919876543211',
   email: 'suresh@nextbus.com',
 };
 
-export const mockEarnings = {
+export const mockEarnings: Earnings = {
   today: {
     trips: 2,
     revenue: 1500,
@@ -107,7 +197,7 @@ export const mockEarnings = {
   },
 };
 
-export const mockTrips = [
+export const mockTrips: TripHistoryItem[] = [
   {
     id: 'TRIP001',
     date: new Date(Date.now() - 3600000).toISOString(),
@@ -140,7 +230,7 @@ export const mockTrips = [
   },
 ];
 
-export const mockBreakdownIncidents = [
+export const mockBreakdownIncidents: Incident[] = [
   {
     id: 'INC001',
     date: new Date(Date.now() - 604800000).toISOString(),
@@ -157,7 +247,7 @@ export const mockBreakdownIncidents = [
   },
 ];
 
-export const mockSOSEvents = [
+export const mockSOSEvents: SOSEvent[] = [
   {
     id: 'SOS001',
     date: new Date(Date.now() - 432000000).toISOString(),

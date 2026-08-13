@@ -54,7 +54,9 @@ export default function TripLog() {
       const cleanPhone = (driver.phone || '').replace(/\D/g, '').slice(-10);
       const trip = await tripService.startTrip(route.number, cleanPhone);
       const tripId = trip.id || trip.trip_id;
-      setActiveTripId(tripId);
+      if (tripId) {
+        setActiveTripId(tripId);
+      }
       await load();
       Alert.alert('Trip started', `Trip #${tripId} logged — GPS live.`);
     } catch (err: any) {

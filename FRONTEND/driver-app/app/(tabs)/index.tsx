@@ -34,13 +34,14 @@ export default function Home() {
     activeTripId,
     setActiveTripId,
     occupancy,
+    goOnline,
+    goOffline,
   } = useDriverStore();
 
-  const { location } = useRealTimeLocation(isOnline);
-  const telemetry = useTelemetry(activeTripId, location, occupancy); // silent GPS Ping
-  const [busy, setBusy] = useState(false);
-
   const tripActive = !!activeTripId;
+  const { location } = useRealTimeLocation(tripActive || isOnline);
+  const telemetry = useTelemetry(activeTripId, location, occupancy);
+  const [busy, setBusy] = useState(false);
 
   const startTrip = async () => {
     if (!driver || !route) {
@@ -52,11 +53,19 @@ export default function Home() {
       const cleanPhone = (driver.phone || '').replace(/\D/g, '').slice(-10);
       const trip = await tripService.startTrip(route.number, cleanPhone);
       const tripId = trip.id || trip.trip_id;
-      setActiveTripId(tripId);
-      Alert.alert('Trip started', `Trip #${tripId} is live — GPS tracking active.`);
+      if (tripId) {
+        setActiveTripId(tripId);
+        goOnline();
+        Alert.alert('Trip started', `Trip #${tripId} is live — GPS tracking active.`);
+      } else {
+        Alert.alert('Error', 'Invalid trip ID returned from server.');
+      }
     } catch (err: any) {
       console.error('Trip start error:', err);
-      Alert.alert('Error', err?.response?.data?.message || err?.response?.data?.error || err.message || 'Backend unreachable.');
+      Alert.alert(
+        'Error',
+        err?.response?.data?.message || err?.response?.data?.error || err?.message || 'Backend unreachable.'
+      );
     } finally {
       setBusy(false);
     }
@@ -68,9 +77,14 @@ export default function Home() {
     try {
       await tripService.endTrip(activeTripId);
       setActiveTripId(null);
+      goOffline();
       Alert.alert('Trip ended', 'Trip marked completed.');
     } catch (err: any) {
-      Alert.alert('Error', err?.response?.data?.message || 'Backend unreachable.');
+      console.error('Trip end error:', err);
+      Alert.alert(
+        'Error',
+        err?.response?.data?.message || err?.response?.data?.error || err?.message || 'Backend unreachable.'
+      );
     } finally {
       setBusy(false);
     }
@@ -136,7 +150,11 @@ export default function Home() {
           </View>
           <View style={styles.chip}>
             <Text style={styles.chipValue}>
-              {tripActive ? (telemetry.isConnected ? 'Active' : 'Linking…') : 'Armed'}
+              {telemetry.status === 'LIVE'
+                ? 'LIVE'
+                : telemetry.status === 'OFFLINE'
+                ? 'OFFLINE'
+                : 'Armed'}
             </Text>
             <Text style={styles.chipLabel}>GPS</Text>
           </View>
@@ -174,9 +192,25 @@ export default function Home() {
           <Text style={styles.tripStatusText}>
             ● {tripActive ? `Trip #${activeTripId} in progress` : 'Awaiting trip start'}
           </Text>
-          <View style={styles.liveBadge}>
-            <Text style={styles.liveBadgeText}>
-              {tripActive && telemetry.isConnected ? '📶 LIVE' : '📶 READY'}
+          <View
+            style={[
+              styles.liveBadge,
+              telemetry.status === 'OFFLINE' && styles.offlineBadge,
+              telemetry.status === 'LIVE' && styles.liveBadgeActive,
+            ]}
+          >
+            <Text
+              style={[
+                styles.liveBadgeText,
+                telemetry.status === 'OFFLINE' && styles.offlineBadgeText,
+                telemetry.status === 'LIVE' && styles.liveBadgeTextActive,
+              ]}
+            >
+              {telemetry.status === 'LIVE'
+                ? '📶 LIVE'
+                : telemetry.status === 'OFFLINE'
+                ? '⚠️ OFFLINE'
+                : '📶 READY'}
             </Text>
           </View>
         </View>
@@ -305,6 +339,10 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
   },
   liveBadgeText: { fontSize: 12, fontWeight: '800', color: BRAND.primary },
+  liveBadgeActive: { backgroundColor: '#DCFCE7' },
+  liveBadgeTextActive: { color: '#15803D' },
+  offlineBadge: { backgroundColor: '#FEE2E2' },
+  offlineBadgeText: { color: '#B91C1C' },
   crewRow: { flexDirection: 'row', gap: 12, marginHorizontal: 16 },
   crewCard: {
     flex: 1,
