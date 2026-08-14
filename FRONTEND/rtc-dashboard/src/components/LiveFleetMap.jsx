@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, Polyline, CircleMarker, Tooltip, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { MapPin, Navigation, Gauge, Users, Clock, RefreshCw, AlertTriangle, Layers, ChevronRight } from 'lucide-react';
+import { MapPin, RefreshCw, AlertTriangle } from 'lucide-react';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 const DEFAULT_CENTER = [17.6868, 83.2185]; // Visakhapatnam
@@ -70,6 +70,29 @@ function MapController({ center, zoom }) {
   return null;
 }
 
+/**
+ * Fits the map to the whole route network once, so the initial view is not
+ * pinned to a hardcoded city centre. One-shot: it must not fight the
+ * operator's own panning, nor the flyTo when they focus a bus.
+ */
+function FitNetworkBounds({ bounds }) {
+  const map = useMap();
+  const [done, setDone] = useState(false);
+
+  useEffect(() => {
+    if (done || !bounds || bounds.length < 2) return;
+    map.fitBounds(bounds, { padding: [40, 40] });
+    setDone(true);
+  }, [bounds, map, done]);
+
+  return null;
+}
+
+/** Only stops the bus has yet to reach. Passed stops carry eta_seconds: null. */
+function upcomingEtas(bus) {
+  return (bus.stop_etas || []).filter((s) => s.eta_seconds !== null && s.eta_seconds !== undefined);
+}
+
 export default function LiveFleetMap({ role, buses: propBuses }) {
   const [fleet, setFleet] = useState(propBuses || []);
   const [selectedTripId, setSelectedTripId] = useState(null);
@@ -77,6 +100,11 @@ export default function LiveFleetMap({ role, buses: propBuses }) {
   const [mapCenter, setMapCenter] = useState(DEFAULT_CENTER);
   const [mapZoom, setMapZoom] = useState(12);
 
+  const [routeGeometry, setRouteGeometry] = useState([]);
+
+  // Manual fallback only. Dashboard.jsx owns fleet state (REST poll +
+  // WebSocket); a standing interval here used to overwrite every live
+  // BUS_UPDATE with 5-second-old REST data, so the map was never really live.
   const fetchFleet = async () => {
     try {
       const res = await axios.get(`${API_URL}/api/tracking/fleet`);
@@ -89,17 +117,55 @@ export default function LiveFleetMap({ role, buses: propBuses }) {
   };
 
   useEffect(() => {
-    if (Array.isArray(propBuses) && propBuses.length > 0) {
+    if (Array.isArray(propBuses)) {
       setFleet(propBuses);
-    } else {
-      fetchFleet();
     }
   }, [propBuses]);
 
+  // Route geometry is static reference data — loaded once. No "already loaded"
+  // ref guard: under StrictMode the effect mounts, cleans up and remounts, so a
+  // guard makes the remount bail out while the first run's cleanup has already
+  // cancelled its fetch, leaving the geometry permanently empty.
   useEffect(() => {
-    const interval = setInterval(fetchFleet, 5000);
-    return () => clearInterval(interval);
+    let cancelled = false;
+
+    const loadGeometry = async () => {
+      try {
+        const routesRes = await axios.get(`${API_URL}/api/routes`);
+        const routes = Array.isArray(routesRes.data) ? routesRes.data : [];
+        const withStops = await Promise.all(
+          routes.map(async (r) => {
+            try {
+              const stopsRes = await axios.get(`${API_URL}/api/routes/${r.id}/stops`);
+              return { route: r, stops: Array.isArray(stopsRes.data) ? stopsRes.data : [] };
+            } catch {
+              return { route: r, stops: [] };
+            }
+          })
+        );
+        if (!cancelled) setRouteGeometry(withStops.filter((r) => r.stops.length > 1));
+      } catch {
+        if (!cancelled) setRouteGeometry([]);
+      }
+    };
+
+    loadGeometry();
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
+  const networkBounds = useMemo(() => {
+    const pts = [];
+    for (const { stops } of routeGeometry) {
+      for (const s of stops) {
+        const lat = Number(s.latitude);
+        const lng = Number(s.longitude);
+        if (Number.isFinite(lat) && Number.isFinite(lng)) pts.push([lat, lng]);
+      }
+    }
+    return pts;
+  }, [routeGeometry]);
 
   // Filter fleet based on status filter button
   const filteredFleet = useMemo(() => {
@@ -258,9 +324,35 @@ export default function LiveFleetMap({ role, buses: propBuses }) {
               url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
             />
             <MapController center={mapCenter} zoom={mapZoom} />
+            <FitNetworkBounds bounds={networkBounds} />
+
+            {/* Route geometry — without the network drawn, an operator cannot
+                see bunching or gaps, only unanchored dots. */}
+            {routeGeometry.map(({ route, stops }) => (
+              <React.Fragment key={route.id}>
+                <Polyline
+                  positions={stops.map((s) => [Number(s.latitude), Number(s.longitude)])}
+                  pathOptions={{ color: '#6366f1', weight: 3, opacity: 0.45 }}
+                />
+                {stops.map((s) => (
+                  <CircleMarker
+                    key={`${route.id}-${s.stop_id}-${s.stop_order}`}
+                    center={[Number(s.latitude), Number(s.longitude)]}
+                    radius={3}
+                    pathOptions={{ color: '#94a3b8', fillColor: '#cbd5e1', fillOpacity: 0.9, weight: 1 }}
+                  >
+                    <Tooltip>
+                      {s.stop_name} · stop {s.stop_order} · Route {route.route_number}
+                    </Tooltip>
+                  </CircleMarker>
+                ))}
+              </React.Fragment>
+            ))}
 
             {filteredFleet.map((bus) => {
-              if (!bus.latitude || !bus.longitude) return null;
+              // Number.isFinite, not truthiness: a bus at exactly lat/lng 0
+              // would otherwise be silently dropped from the map.
+              if (!Number.isFinite(Number(bus.latitude)) || !Number.isFinite(Number(bus.longitude))) return null;
               const status = getVehicleStatus(bus);
               const isSelected = String(bus.trip_id) === String(selectedTripId);
               const icon = createBusIcon(status, bus.route_number, isSelected);
@@ -320,9 +412,9 @@ export default function LiveFleetMap({ role, buses: propBuses }) {
                         <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">
                           Upcoming Stop ETAs
                         </span>
-                        {bus.stop_etas && bus.stop_etas.length > 0 ? (
+                        {upcomingEtas(bus).length > 0 ? (
                           <div className="space-y-1 max-h-28 overflow-y-auto pr-1">
-                            {bus.stop_etas.slice(0, 3).map((eta, idx) => (
+                            {upcomingEtas(bus).slice(0, 3).map((eta, idx) => (
                               <div
                                 key={eta.stop_id || idx}
                                 className="flex items-center justify-between text-xs py-1 px-1.5 bg-slate-900/50 rounded border border-slate-800/80"
@@ -377,11 +469,11 @@ export default function LiveFleetMap({ role, buses: propBuses }) {
             </div>
 
             {/* Upcoming Stops List */}
-            {selectedBus.stop_etas && selectedBus.stop_etas.length > 0 && (
+            {upcomingEtas(selectedBus).length > 0 && (
               <div>
-                <p className="text-xs font-semibold text-slate-300 mb-1.5">Stop ETA Sequence:</p>
+                <p className="text-xs font-semibold text-slate-300 mb-1.5">Upcoming stops:</p>
                 <div className="grid grid-cols-2 gap-2 text-xs">
-                  {selectedBus.stop_etas.slice(0, 4).map((eta, idx) => (
+                  {upcomingEtas(selectedBus).slice(0, 4).map((eta, idx) => (
                     <div key={eta.stop_id || idx} className="bg-slate-950/80 p-2 rounded border border-slate-800 flex flex-col">
                       <span className="text-slate-400 truncate text-[11px]">{eta.stop_name}</span>
                       <span className="font-bold text-indigo-400 text-xs">

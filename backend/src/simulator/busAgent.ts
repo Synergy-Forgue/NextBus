@@ -16,7 +16,8 @@ export interface BusAgentConfig {
   license_plate: string;
   capacity:     number;
   stops:        StopInfo[];
-  ws:           WebSocket;
+  /** Null while the publisher socket is down; ticks are dropped until it returns. */
+  ws:           WebSocket | null;
   intervalMs:   number; // how often to emit a telemetry tick (e.g. 2000ms)
 }
 
@@ -27,8 +28,8 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-function send(ws: WebSocket, payload: TelemetryPayload): void {
-  if (ws.readyState === WebSocket.OPEN) {
+function send(ws: WebSocket | null, payload: TelemetryPayload): void {
+  if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify(payload));
   }
 }
@@ -45,6 +46,14 @@ export class BusAgent {
 
   constructor(cfg: BusAgentConfig) {
     this.cfg = cfg;
+  }
+
+  /**
+   * Point this agent at a new socket after a reconnect, so the bus keeps its
+   * position and occupancy instead of being rebuilt from the first stop.
+   */
+  setSocket(ws: WebSocket): void {
+    this.cfg.ws = ws;
   }
 
   /** Start the simulation loop */

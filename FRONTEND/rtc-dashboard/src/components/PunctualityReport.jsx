@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import DemoDataNotice from './DemoDataNotice.jsx';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -17,6 +18,7 @@ export default function PunctualityReport() {
   const [summary, setSummary] = useState({
     avg_on_time_percent: 90.4,
   });
+  const [isLive, setIsLive] = useState(false);
 
   useEffect(() => {
     fetchPunctuality();
@@ -28,14 +30,17 @@ export default function PunctualityReport() {
       if (res.data?.routes) {
         setRoutes(res.data.routes);
         setSummary(res.data.summary || {});
+        setIsLive(true);
       }
     } catch (err) {
-      // Use preloaded mock analytics if backend endpoint is unmounted
+      // Endpoint not implemented — keep the placeholders, but say so on screen.
+      setIsLive(false);
     }
   };
 
   return (
     <div className="space-y-6">
+      {!isLive && <DemoDataNotice needs="published timetables to compare actual arrivals against" />}
       {/* Summary */}
       <div className="bg-white border border-slate-200 rounded-lg p-4">
         <p className="text-slate-600 text-sm font-medium">Average On-Time Rate</p>

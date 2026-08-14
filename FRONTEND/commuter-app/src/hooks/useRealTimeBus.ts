@@ -23,12 +23,22 @@ function toBusPosition(bus: any, routeNumbers: Record<number, string>) {
     busId: String(bus.trip_id),
     lat: bus.latitude,
     lng: bus.longitude,
-    routeNo: routeNumbers[bus.route_id] || String(bus.route_id),
+    routeNo: bus.route_number || routeNumbers[bus.route_id] || String(bus.route_id),
     // occupancy (0–50 seats) → 0–10 crowd scale
     crowdLevel: Math.min(10, Math.round((bus.occupancy_count || 0) / 5)),
     speed: Math.round(bus.speed || 0),
     eta: nextEta ? Math.max(1, Math.round(nextEta.eta_seconds / 60)) : undefined,
     licensePlate: bus.license_plate,
+    // Carry the rest of the backend's LiveBusState through to the store.
+    // Without these the map cannot render the stop-by-stop ETA list, the
+    // vehicle state badge, or tell which route a bus belongs to.
+    trip_id: bus.trip_id,
+    route_id: bus.route_id,
+    occupancy_count: bus.occupancy_count,
+    nextStopIndex: bus.nextStopIndex,
+    status: bus.status || 'LIVE',
+    last_updated: bus.last_updated || new Date().toISOString(),
+    stop_etas: bus.stop_etas,
   }
 }
 

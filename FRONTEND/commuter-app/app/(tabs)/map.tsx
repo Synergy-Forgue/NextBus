@@ -1,45 +1,107 @@
-import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
+import MapView, { Marker, Polyline } from 'react-native-maps';
+
 import { useCommuterStore } from '@/src/store/commuterStore';
+import type { BusPosition, VehicleStatus } from '@/src/store/useCommuterStore';
 import { BRAND } from '@/src/styles/brand';
 import { smartAlertsService } from '@/src/services/smartAlertsService';
-import MapView, { Marker, Polyline } from 'react-native-maps';
-import { routeService } from '@/src/services/routeService';
+import { routeService, RouteStop } from '@/src/services/routeService';
+import useRealTimeBus from '@/src/hooks/useRealTimeBus';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://nextbus-production.up.railway.app';
-const WS_URL = API_URL.replace(/^http/, 'ws') + '/ws/subscribe';
+const VIZAG_FALLBACK_REGION = {
+  latitude: 17.7261,
+  longitude: 83.3085,
+  latitudeDelta: 0.05,
+  longitudeDelta: 0.05,
+};
 
-function getDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
-  const p = 0.017453292519943295;
-  const c = Math.cos;
-  const a = 0.5 - c((lat2 - lat1) * p)/2 + 
-          c(lat1 * p) * c(lat2 * p) * 
-          (1 - c((lon2 - lon1) * p))/2;
-  return 12742 * Math.asin(Math.sqrt(a)); 
+/** Great-circle distance in km. */
+function distanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+/** Frame the camera around a set of coordinates with a little breathing room. */
+function regionForCoords(coords: { latitude: number; longitude: number }[]) {
+  if (!coords.length) return VIZAG_FALLBACK_REGION;
+  const lats = coords.map((c) => c.latitude);
+  const lngs = coords.map((c) => c.longitude);
+  const minLat = Math.min(...lats);
+  const maxLat = Math.max(...lats);
+  const minLng = Math.min(...lngs);
+  const maxLng = Math.max(...lngs);
+  return {
+    latitude: (minLat + maxLat) / 2,
+    longitude: (minLng + maxLng) / 2,
+    latitudeDelta: Math.max(0.02, (maxLat - minLat) * 1.5),
+    longitudeDelta: Math.max(0.02, (maxLng - minLng) * 1.5),
+  };
+}
+
+function formatAge(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
+  return `${Math.round(seconds / 3600)}h`;
+}
+
+/** How the backend's VehicleStatus is presented to a commuter. */
+function statusPresentation(status: VehicleStatus | undefined, lastUpdated?: string) {
+  const ageSec = lastUpdated
+    ? Math.max(0, Math.round((Date.now() - new Date(lastUpdated).getTime()) / 1000))
+    : null;
+
+  switch (status) {
+    case 'APPROACHING STOP':
+      return { label: 'Approaching stop', color: '#4F46E5', isLive: true };
+    case 'AT STOP':
+      return { label: 'At stop', color: '#7C3AED', isLive: true };
+    case 'STALE':
+      return { label: ageSec ? `No signal ${formatAge(ageSec)}` : 'Stale', color: '#F59E0B', isLive: false };
+    case 'SIGNAL LOST':
+      return { label: 'Signal lost', color: '#F59E0B', isLive: false };
+    case 'OFFLINE':
+      return { label: 'Offline', color: '#64748B', isLive: false };
+    default:
+      return { label: 'Live', color: '#16A34A', isLive: true };
+  }
+}
+
+function formatEta(seconds: number | null): string {
+  if (seconds === null || seconds === undefined) return '—';
+  if (seconds < 60) return '<1m';
+  return `${Math.round(seconds / 60)}m`;
 }
 
 export default function MapScreen() {
   const router = useRouter();
   const { selectedRoute, setLateNightMode } = useCommuterStore();
-  const [buses, setBuses] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
+
+  // Single live-telemetry subscription for the screen, filtered to the selected
+  // route when there is one. This replaces a hand-rolled socket that read
+  // `data.buses` and listened for `LOCATION_UPDATE` — neither of which the
+  // backend ever sends, so no live position ever reached this screen.
+  const routeId = selectedRoute?.id ? Number(selectedRoute.id) : undefined;
+  const { busPositions, isConnected, error } = useRealTimeBus(routeId);
+
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [aiAlert, setAiAlert] = useState<any>(null);
   const [isLateNight, setIsLateNight] = useState(false);
   const [crowdWarning, setCrowdWarning] = useState<string | null>(null);
-  const [routeStops, setRouteStops] = useState<any[]>([]);
-  const [region, setRegion] = useState({
-    latitude: 17.7261,
-    longitude: 83.3085,
-    latitudeDelta: 0.05,
-    longitudeDelta: 0.05,
-  });
-  
+  const [routeStops, setRouteStops] = useState<RouteStop[]>([]);
+  const [hasFramed, setHasFramed] = useState(false);
+
   const mapRef = useRef<MapView>(null);
-  const wsRef = useRef<WebSocket | null>(null);
+
+  const buses: BusPosition[] = useMemo(() => Object.values(busPositions || {}), [busPositions]);
 
   useEffect(() => {
     initLocation();
@@ -48,22 +110,26 @@ export default function MapScreen() {
     return () => clearInterval(interval);
   }, []);
 
+  // Load the ordered stop list whenever the commuter picks a different route
   useEffect(() => {
-    if (selectedRoute?.id) {
-      loadRouteStops(selectedRoute.id);
-    } else {
+    setHasFramed(false);
+    if (!routeId) {
       setRouteStops([]);
+      return;
     }
-  }, [selectedRoute]);
-
-  useEffect(() => {
-    connectWebSocket();
+    let cancelled = false;
+    routeService
+      .getRouteStops(routeId)
+      .then((stops) => {
+        if (!cancelled) setRouteStops(stops || []);
+      })
+      .catch(() => {
+        if (!cancelled) setRouteStops([]);
+      });
     return () => {
-      if (wsRef.current) {
-        wsRef.current.close();
-      }
+      cancelled = true;
     };
-  }, []);
+  }, [routeId]);
 
   const initLocation = async () => {
     try {
@@ -76,256 +142,304 @@ export default function MapScreen() {
   };
 
   const checkLateNightMode = () => {
-    const hour = new Date().getHours();
-    const isLate = hour >= 21 || hour < 6;
+    const isLate = smartAlertsService.checkLateNightMode();
     setIsLateNight(isLate);
     setLateNightMode(isLate);
   };
 
-  const loadRouteStops = async (routeId: number | string) => {
-    try {
-      const id = typeof routeId === 'string' ? parseInt(routeId, 10) : routeId;
-      const stops = await routeService.getRouteStops(id);
-      setRouteStops(stops || []);
-      if (stops && stops.length > 0) {
-        const firstStop = stops[0];
-        const newRegion = {
-          latitude: firstStop.latitude,
-          longitude: firstStop.longitude,
-          latitudeDelta: 0.05,
-          longitudeDelta: 0.05,
-        };
-        setRegion(newRegion);
-        mapRef.current?.animateToRegion(newRegion, 1000);
-      }
-    } catch (error) {
-      console.error('Failed to load stops:', error);
+  // The bus the commuter is actually tracking
+  const selectedBus: BusPosition | undefined = useMemo(() => {
+    if (!buses.length) return undefined;
+    if (routeId) {
+      const onRoute = buses.find((b) => b.route_id === routeId);
+      if (onRoute) return onRoute;
     }
-  };
+    if (userLocation) {
+      return [...buses].sort(
+        (a, b) =>
+          distanceKm(userLocation.latitude, userLocation.longitude, a.lat, a.lng) -
+          distanceKm(userLocation.latitude, userLocation.longitude, b.lat, b.lng)
+      )[0];
+    }
+    return buses[0];
+  }, [buses, routeId, userLocation]);
 
-  const connectWebSocket = () => {
-    setLoading(true);
-    const ws = new WebSocket(WS_URL);
-    wsRef.current = ws;
+  // Auto-frame the camera once per route: fit the whole route, or bus + user.
+  useEffect(() => {
+    if (hasFramed || !mapRef.current) return;
 
-    ws.onopen = () => {
-      setLoading(false);
-    };
+    const coords: { latitude: number; longitude: number }[] = [];
+    if (routeStops.length) {
+      coords.push(...routeStops.map((s) => ({ latitude: s.latitude, longitude: s.longitude })));
+    } else if (selectedBus) {
+      coords.push({ latitude: selectedBus.lat, longitude: selectedBus.lng });
+      if (userLocation) coords.push(userLocation);
+    }
 
-    ws.onmessage = async (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.type === 'SNAPSHOT') {
-          setBuses(data.buses || []);
-          checkAlerts(data.buses || []);
-        } else if (data.type === 'LOCATION_UPDATE') {
-          setBuses((prev) => {
-            const updated = [...prev];
-            const idx = updated.findIndex((b) => b.bus_id === data.bus.bus_id);
-            if (idx >= 0) {
-              updated[idx] = { ...updated[idx], ...data.bus };
-            } else {
-              updated.push(data.bus);
-            }
-            return updated;
-          });
-        } else if (data.type === 'BUS_OFFLINE') {
-          setBuses((prev) => prev.filter((b) => b.bus_id !== data.bus_id));
-        }
-      } catch (e) {
-        console.error('WS Message error:', e);
-      }
-    };
+    if (coords.length) {
+      mapRef.current.animateToRegion(regionForCoords(coords), 800);
+      setHasFramed(true);
+    }
+  }, [routeStops, selectedBus, userLocation, hasFramed]);
 
-    ws.onerror = () => {
-      setLoading(false);
-    };
+  // Proactive nudges, driven by real telemetry rather than a hardcoded ETA
+  useEffect(() => {
+    if (!selectedBus || !userLocation) {
+      setAiAlert(null);
+      setCrowdWarning(null);
+      return;
+    }
 
-    ws.onclose = () => {
-      setLoading(false);
-    };
-  };
-
-  const checkAlerts = async (currentBuses: any[]) => {
-    if (userLocation && currentBuses.length > 0) {
-      const targetBus = selectedRoute 
-        ? currentBuses.find(b => b.route_id === selectedRoute.id || b.route_number === selectedRoute.number)
-        : currentBuses[0];
-
-      if (targetBus) {
+    const run = async () => {
+      const etaMinutes = selectedBus.eta;
+      if (etaMinutes != null) {
+        const nextStop = routeStops[selectedBus.nextStopIndex ?? 0];
+        const target = nextStop
+          ? { latitude: nextStop.latitude, longitude: nextStop.longitude }
+          : { latitude: selectedBus.lat, longitude: selectedBus.lng };
         const alert = await smartAlertsService.checkAIProactiveAlert(
           userLocation.latitude,
           userLocation.longitude,
-          12,
-          selectedRoute?.number || '10K',
-          { latitude: targetBus.latitude, longitude: targetBus.longitude }
+          etaMinutes,
+          selectedBus.routeNo,
+          target
         );
         setAiAlert(alert.trigger ? alert : null);
-
-        const crowdCheck = smartAlertsService.checkCrowdSafety(
-          targetBus.occupancy || 60,
-          isLateNight
-        );
-        setCrowdWarning(crowdCheck.safe ? null : crowdCheck.message || null);
+      } else {
+        setAiAlert(null);
       }
-    }
-  };
 
-  const selectedBus = selectedRoute 
-    ? buses.find(b => b.route_id === selectedRoute.id || b.route_number === selectedRoute.number)
-    : buses[0];
+      const occupancyPercent = Math.round(((selectedBus.occupancy_count ?? 0) / 50) * 100);
+      const crowdCheck = smartAlertsService.checkCrowdSafety(occupancyPercent, isLateNight);
+      setCrowdWarning(crowdCheck.safe ? null : crowdCheck.message || null);
+    };
 
-  let etaText = 'No live data';
+    run();
+  }, [selectedBus, userLocation, isLateNight, routeStops]);
+
+  const presentation = selectedBus
+    ? statusPresentation(selectedBus.status, selectedBus.last_updated)
+    : null;
+  const nearbyBuses = buses.filter((b) => b.busId !== selectedBus?.busId).slice(0, 4);
+
   let distanceText = '';
-  let timeValue = '--m';
-  let isLive = false;
-
   if (selectedBus && userLocation) {
-    isLive = true;
-    const dist = getDistance(
-      userLocation.latitude,
-      userLocation.longitude,
-      selectedBus.latitude,
-      selectedBus.longitude
-    );
-    const speed = selectedBus.speed || 30; // km/h
-    const timeHours = dist / speed;
-    const timeMins = Math.round(timeHours * 60);
-
+    const dist = distanceKm(userLocation.latitude, userLocation.longitude, selectedBus.lat, selectedBus.lng);
     distanceText = `${dist.toFixed(1)} km away`;
-    timeValue = `${timeMins}m`;
-    etaText = `📍 ${distanceText} • ${timeValue}`;
-  } else if (selectedBus) {
-    isLive = true;
-    etaText = 'Live location available';
-    timeValue = '--m';
   }
 
-  const nearbyBuses = buses.filter(b => b.bus_id !== selectedBus?.bus_id).slice(0, 3);
+  const etaLabel = selectedBus?.eta != null ? `${selectedBus.eta}m` : '--';
+  const upcomingStops = (selectedBus?.stop_etas || []).filter((s) => s.eta_seconds !== null);
+  const passedCount = (selectedBus?.stop_etas || []).length - upcomingStops.length;
+
+  const connectionLabel = isConnected
+    ? buses.length > 0
+      ? `Live • ${buses.length} bus${buses.length === 1 ? '' : 'es'}`
+      : 'Live • no buses in service'
+    : error
+    ? 'Reconnecting…'
+    : 'Connecting…';
 
   return (
     <View style={styles.container}>
       <MapView
         ref={mapRef}
         style={styles.map}
-        region={region}
-        onRegionChangeComplete={setRegion}
+        initialRegion={VIZAG_FALLBACK_REGION}
         showsUserLocation
         showsMyLocationButton
       >
-        {routeStops.length > 0 && (
+        {routeStops.length > 1 && (
           <Polyline
-            coordinates={routeStops.map(s => ({ latitude: s.latitude, longitude: s.longitude }))}
+            coordinates={routeStops.map((s) => ({ latitude: s.latitude, longitude: s.longitude }))}
             strokeColor={BRAND.primary}
             strokeWidth={4}
           />
         )}
 
-        {routeStops.map((stop, i) => (
-          <Marker
-            key={`stop-${i}`}
-            coordinate={{ latitude: stop.latitude, longitude: stop.longitude }}
-            title={stop.name || `Stop ${i+1}`}
-            anchor={{ x: 0.5, y: 0.5 }}
-          >
-            <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: '#FFFFFF', borderColor: BRAND.primary, borderWidth: 3 }} />
-          </Marker>
-        ))}
+        {routeStops.map((stop, i) => {
+          const isPassed = selectedBus?.nextStopIndex != null && i < selectedBus.nextStopIndex;
+          const isNext = selectedBus?.nextStopIndex === i;
+          return (
+            <Marker
+              key={`stop-${stop.stop_id}-${i}`}
+              coordinate={{ latitude: stop.latitude, longitude: stop.longitude }}
+              title={stop.stop_name}
+              description={`Stop ${stop.stop_order}${isNext ? ' • next' : isPassed ? ' • passed' : ''}`}
+              anchor={{ x: 0.5, y: 0.5 }}
+              tracksViewChanges={false}
+            >
+              <View
+                style={[styles.stopDot, isNext && styles.stopDotNext, isPassed && styles.stopDotPassed]}
+              />
+            </Marker>
+          );
+        })}
 
         {selectedBus && (
           <Marker
-            coordinate={{ latitude: selectedBus.latitude, longitude: selectedBus.longitude }}
-            title={`Route ${selectedBus.route_number} - ${selectedBus.bus_number}`}
-            pinColor={BRAND.primary}
+            coordinate={{ latitude: selectedBus.lat, longitude: selectedBus.lng }}
+            title={`Route ${selectedBus.routeNo}`}
+            description={`${selectedBus.licensePlate || ''} • ${presentation?.label || ''}`}
+            anchor={{ x: 0.5, y: 0.5 }}
           >
-            <View style={styles.selectedMarker}>
+            <View style={[styles.selectedMarker, { borderColor: presentation?.color || BRAND.primary }]}>
               <Text style={styles.selectedMarkerEmoji}>🚌</Text>
-              <Text style={styles.selectedMarkerLabel}>{selectedBus.route_number}</Text>
+              <Text style={styles.selectedMarkerLabel}>{selectedBus.routeNo}</Text>
             </View>
           </Marker>
         )}
 
-        {nearbyBuses.map((bus, i) => (
+        {nearbyBuses.map((bus) => (
           <Marker
-            key={`bus-${i}`}
-            coordinate={{ latitude: bus.latitude, longitude: bus.longitude }}
-            title={`Route ${bus.route_number} - ${bus.bus_number}`}
-            pinColor={BRAND.textTertiary}
+            key={`bus-${bus.busId}`}
+            coordinate={{ latitude: bus.lat, longitude: bus.lng }}
+            title={`Route ${bus.routeNo}`}
+            description={bus.licensePlate}
+            anchor={{ x: 0.5, y: 0.5 }}
           >
             <View style={styles.nearbyMarker}>
               <Text style={styles.nearbyMarkerEmoji}>🚍</Text>
-              <Text style={styles.nearbyMarkerLabel}>{bus.route_number}</Text>
+              <Text style={styles.nearbyMarkerLabel}>{bus.routeNo}</Text>
             </View>
           </Marker>
         ))}
       </MapView>
 
+      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()}>
           <Text style={styles.back}>←</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>Visakhapatnam • {isLive ? 'Live' : 'Connecting...'}</Text>
-        <TouchableOpacity onPress={connectWebSocket}>
-          <Text style={styles.refresh}>{loading ? '⟳' : '🔄'}</Text>
+        <View style={{ flex: 1, alignItems: 'center' }}>
+          <Text style={styles.title}>
+            {selectedRoute ? `Route ${selectedRoute.route_number}` : 'All Routes'}
+          </Text>
+          <Text style={[styles.subtitle, { color: isConnected ? BRAND.success : BRAND.warning }]}>
+            {connectionLabel}
+          </Text>
+        </View>
+        <TouchableOpacity onPress={() => setHasFramed(false)}>
+          <Text style={styles.refresh}>🎯</Text>
         </TouchableOpacity>
       </View>
 
-      {selectedRoute && (
-        <View style={{ position: 'absolute', top: 80, left: 16, right: 16, backgroundColor: BRAND.surface, borderRadius: BRAND.radius.lg, padding: 10, ...BRAND.shadow }}>
-          <Text style={{ fontSize: 11, fontWeight: '700', color: BRAND.textSecondary }}>🚌 Selected: Route {selectedRoute.route_number || selectedRoute.number}</Text>
-          <Text style={{ fontSize: 10, color: BRAND.textTertiary, marginTop: 2 }}>📍 Showing 3-4 nearby buses</Text>
-        </View>
-      )}
-
       {aiAlert && (
-        <View style={{ position: 'absolute', top: 80, left: 16, right: 16, backgroundColor: BRAND.primary, borderRadius: BRAND.radius.lg, padding: 14, ...BRAND.shadow }}>
-          <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 14 }}>{aiAlert.message}</Text>
-          <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 12, marginTop: 4 }}>Walk time: {aiAlert.walkTime} min • Distance: {aiAlert.distance} km</Text>
+        <View style={[styles.banner, { backgroundColor: BRAND.primary, top: 92 }]}>
+          <Text style={styles.bannerTitle}>{aiAlert.message}</Text>
+          <Text style={styles.bannerSub}>
+            Walk time: {aiAlert.walkTime} min • Distance: {aiAlert.distance} km
+          </Text>
         </View>
       )}
 
       {crowdWarning && (
-        <View style={{ position: 'absolute', top: isLateNight ? 160 : 80, left: 16, right: 16, backgroundColor: BRAND.danger, borderRadius: BRAND.radius.lg, padding: 12, ...BRAND.shadow }}>
-          <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 13 }}>{crowdWarning}</Text>
+        <View style={[styles.banner, { backgroundColor: BRAND.danger, top: aiAlert ? 156 : 92 }]}>
+          <Text style={styles.bannerTitle}>{crowdWarning}</Text>
         </View>
       )}
 
-      {isLateNight && (
-        <View style={{ position: 'absolute', top: 80, right: 16, backgroundColor: BRAND.warning, borderRadius: BRAND.radius.pill, paddingHorizontal: 12, paddingVertical: 8 }}>
-          <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 12 }}>🌙 Late Night Mode</Text>
+      {isLateNight && !aiAlert && !crowdWarning && (
+        <View style={styles.lateNightBadge}>
+          <Text style={styles.lateNightText}>🌙 Late Night Mode</Text>
         </View>
       )}
 
-      {selectedBus && (
+      {/* Bus info sheet — or an honest empty state */}
+      {selectedBus ? (
         <View style={styles.busInfo}>
           <View style={styles.busRoute}>
-            <Text style={styles.busNumber}>{selectedBus.route_number}</Text>
+            <Text style={styles.busNumber}>{selectedBus.routeNo}</Text>
             <View style={styles.busDetails}>
-              <Text style={styles.busName}>{selectedBus.bus_number}</Text>
-              <Text style={styles.busDistance}>{etaText}</Text>
+              <Text style={styles.busName}>{selectedBus.licensePlate || 'Bus'}</Text>
+              <Text style={styles.busDistance}>
+                {distanceText || 'Position unavailable'}
+                {selectedBus.last_updated
+                  ? ` • updated ${formatAge(
+                      Math.round((Date.now() - new Date(selectedBus.last_updated).getTime()) / 1000)
+                    )} ago`
+                  : ''}
+              </Text>
             </View>
+            {presentation && (
+              <View style={[styles.statusPill, { backgroundColor: presentation.color }]}>
+                <Text style={styles.statusPillText}>{presentation.label}</Text>
+              </View>
+            )}
           </View>
 
           <View style={styles.busStats}>
             <View style={styles.stat}>
               <Text style={styles.statEmoji}>👥</Text>
-              <Text style={styles.statValue}>{selectedBus.occupancy || 62}%</Text>
+              <Text style={styles.statValue}>{selectedBus.occupancy_count ?? 0}/50</Text>
             </View>
             <View style={styles.stat}>
               <Text style={styles.statEmoji}>⏱️</Text>
-              <Text style={styles.statValue}>{timeValue}</Text>
+              <Text style={styles.statValue}>{etaLabel}</Text>
             </View>
             <View style={styles.stat}>
-              <Text style={styles.statEmoji}>♀️</Text>
-              <Text style={styles.statValue}>Safe</Text>
+              <Text style={styles.statEmoji}>🚀</Text>
+              <Text style={styles.statValue}>{selectedBus.speed ?? 0} km/h</Text>
             </View>
           </View>
 
+          {/* Ordered upcoming stops with live ETAs */}
+          {upcomingStops.length > 0 && (
+            <View style={styles.stopsBlock}>
+              <Text style={styles.stopsHeading}>
+                NEXT STOPS {passedCount > 0 ? `• ${passedCount} passed` : ''}
+              </Text>
+              <ScrollView style={{ maxHeight: 108 }} showsVerticalScrollIndicator={false}>
+                {upcomingStops.slice(0, 6).map((stop, i) => (
+                  <View key={`eta-${stop.stop_id}-${i}`} style={styles.stopRow}>
+                    <Text style={styles.stopOrder}>{stop.stop_order}</Text>
+                    <Text style={styles.stopName} numberOfLines={1}>
+                      {stop.stop_name}
+                    </Text>
+                    <View
+                      style={[
+                        styles.etaBadge,
+                        { backgroundColor: presentation?.isLive ? BRAND.successSoft : BRAND.surfaceMuted },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.etaBadgeText,
+                          { color: presentation?.isLive ? BRAND.success : BRAND.textSecondary },
+                        ]}
+                      >
+                        {formatEta(stop.eta_seconds)}
+                      </Text>
+                    </View>
+                  </View>
+                ))}
+              </ScrollView>
+            </View>
+          )}
+
           <TouchableOpacity onPress={() => router.push('/trip-sharing')} activeOpacity={0.8}>
-            <LinearGradient colors={BRAND.gradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.actionBtn}>
+            <LinearGradient
+              colors={BRAND.gradient}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.actionBtn}
+            >
               <Text style={styles.actionBtnText}>Share Trip</Text>
             </LinearGradient>
           </TouchableOpacity>
+        </View>
+      ) : (
+        <View style={styles.busInfo}>
+          <Text style={styles.emptyTitle}>
+            {isConnected ? 'No buses currently in service' : 'Connecting to live tracking…'}
+          </Text>
+          <Text style={styles.emptySub}>
+            {isConnected
+              ? selectedRoute
+                ? `No active bus on Route ${selectedRoute.route_number} right now. The route and its stops are shown above.`
+                : 'No vehicles are publishing telemetry at the moment.'
+              : 'Waiting for the tracking server. Retrying automatically.'}
+          </Text>
         </View>
       )}
 
@@ -339,30 +453,150 @@ export default function MapScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: BRAND.bg },
   map: { flex: 1, backgroundColor: '#E0E0E0' },
-  header: { position: 'absolute', top: 16, left: 16, right: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: BRAND.surface, borderRadius: BRAND.radius.xl, paddingHorizontal: 14, paddingVertical: 10, ...BRAND.shadow },
+  header: {
+    position: 'absolute',
+    top: 16,
+    left: 16,
+    right: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: BRAND.surface,
+    borderRadius: BRAND.radius.xl,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    ...BRAND.shadow,
+  },
   back: { fontSize: 20, color: BRAND.text, fontWeight: '800' },
-  title: { fontSize: 14, fontWeight: '700', color: BRAND.text },
+  title: { fontSize: 14, fontWeight: '800', color: BRAND.text },
+  subtitle: { fontSize: 11, fontWeight: '700', marginTop: 2 },
   refresh: { fontSize: 18 },
-  busInfo: { position: 'absolute', bottom: 20, left: 16, right: 16, backgroundColor: BRAND.surface, borderRadius: BRAND.radius.xl, padding: 16, ...BRAND.shadow },
+  banner: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    borderRadius: BRAND.radius.lg,
+    padding: 14,
+    ...BRAND.shadow,
+  },
+  bannerTitle: { color: '#FFFFFF', fontWeight: '800', fontSize: 14 },
+  bannerSub: { color: 'rgba(255,255,255,0.85)', fontSize: 12, marginTop: 4 },
+  lateNightBadge: {
+    position: 'absolute',
+    top: 92,
+    right: 16,
+    backgroundColor: BRAND.warning,
+    borderRadius: BRAND.radius.pill,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  lateNightText: { color: '#FFFFFF', fontWeight: '800', fontSize: 12 },
+  busInfo: {
+    position: 'absolute',
+    bottom: 20,
+    left: 16,
+    right: 16,
+    backgroundColor: BRAND.surface,
+    borderRadius: BRAND.radius.xl,
+    padding: 16,
+    ...BRAND.shadow,
+  },
   busRoute: { flexDirection: 'row', alignItems: 'center', marginBottom: 12, gap: 12 },
-  busNumber: { fontSize: 24, fontWeight: '900', color: BRAND.primary, width: 50 },
+  busNumber: { fontSize: 22, fontWeight: '900', color: BRAND.primary },
   busDetails: { flex: 1 },
   busName: { fontSize: 14, fontWeight: '700', color: BRAND.text },
-  busDistance: { fontSize: 12, color: BRAND.textSecondary, marginTop: 2 },
+  busDistance: { fontSize: 11, color: BRAND.textSecondary, marginTop: 2 },
+  statusPill: { borderRadius: BRAND.radius.pill, paddingHorizontal: 8, paddingVertical: 4 },
+  statusPillText: { color: '#FFFFFF', fontSize: 10, fontWeight: '800' },
   busStats: { flexDirection: 'row', gap: 10, marginBottom: 12 },
-  stat: { flex: 1, backgroundColor: BRAND.surfaceMuted, borderRadius: BRAND.radius.lg, padding: 10, alignItems: 'center' },
+  stat: {
+    flex: 1,
+    backgroundColor: BRAND.surfaceMuted,
+    borderRadius: BRAND.radius.lg,
+    padding: 10,
+    alignItems: 'center',
+  },
   statEmoji: { fontSize: 18, marginBottom: 4 },
   statValue: { fontSize: 12, fontWeight: '800', color: BRAND.text },
-  actionBtn: { height: 48, borderRadius: BRAND.radius.pill, justifyContent: 'center', alignItems: 'center' },
+  stopsBlock: { marginBottom: 12 },
+  stopsHeading: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1,
+    color: BRAND.textSecondary,
+    marginBottom: 6,
+  },
+  stopRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 5 },
+  stopOrder: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: BRAND.surfaceMuted,
+    textAlign: 'center',
+    lineHeight: 20,
+    fontSize: 10,
+    fontWeight: '800',
+    color: BRAND.textSecondary,
+    overflow: 'hidden',
+  },
+  stopName: { flex: 1, fontSize: 12, fontWeight: '600', color: BRAND.text },
+  etaBadge: { borderRadius: BRAND.radius.md, paddingHorizontal: 8, paddingVertical: 3 },
+  etaBadgeText: { fontSize: 11, fontWeight: '800' },
+  actionBtn: {
+    height: 48,
+    borderRadius: BRAND.radius.pill,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   actionBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
-  sosButton: { position: 'absolute', bottom: 32, right: 20, width: 60, height: 60, borderRadius: 30, backgroundColor: BRAND.danger, justifyContent: 'center', alignItems: 'center', ...BRAND.shadow },
+  emptyTitle: { fontSize: 15, fontWeight: '800', color: BRAND.text, marginBottom: 4 },
+  emptySub: { fontSize: 12, color: BRAND.textSecondary, lineHeight: 18 },
+  stopDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#FFFFFF',
+    borderColor: BRAND.primary,
+    borderWidth: 3,
+  },
+  stopDotNext: { width: 16, height: 16, borderRadius: 8, borderColor: BRAND.success },
+  stopDotPassed: { borderColor: BRAND.textTertiary, opacity: 0.5 },
+  selectedMarker: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: BRAND.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 4,
+    ...BRAND.shadow,
+  },
+  selectedMarkerEmoji: { fontSize: 22 },
+  selectedMarkerLabel: { fontSize: 8, fontWeight: '800', color: '#FFFFFF', marginTop: 1 },
+  nearbyMarker: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: BRAND.textTertiary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    opacity: 0.6,
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.6)',
+  },
+  nearbyMarkerEmoji: { fontSize: 16 },
+  nearbyMarkerLabel: { fontSize: 7, fontWeight: '700', color: '#FFFFFF' },
+  sosButton: {
+    position: 'absolute',
+    bottom: 32,
+    right: 20,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: BRAND.danger,
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...BRAND.shadow,
+  },
   sosButtonText: { color: '#FFFFFF', fontSize: 16, fontWeight: '900' },
-  selectedMarker: { width: 50, height: 50, borderRadius: 25, backgroundColor: BRAND.primary, justifyContent: 'center', alignItems: 'center', borderWidth: 4, borderColor: '#FFFFFF', shadowColor: BRAND.primary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.8, shadowRadius: 12, elevation: 8 },
-  selectedMarkerEmoji: { fontSize: 24, fontWeight: '900' },
-  selectedMarkerLabel: { fontSize: 8, fontWeight: '800', color: '#FFFFFF', marginTop: 2 },
-  nearbyMarker: { width: 36, height: 36, borderRadius: 18, backgroundColor: BRAND.textTertiary, justifyContent: 'center', alignItems: 'center', opacity: 0.5, borderWidth: 2, borderColor: 'rgba(255,255,255,0.5)' },
-  nearbyMarkerEmoji: { fontSize: 18, fontWeight: '700' },
-  nearbyMarkerLabel: { fontSize: 7, fontWeight: '700', color: '#FFFFFF', marginTop: 1 },
 });
-
-

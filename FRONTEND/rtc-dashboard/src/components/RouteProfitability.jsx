@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
+import DemoDataNotice from './DemoDataNotice.jsx';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -19,6 +20,8 @@ export default function RouteProfitability() {
     total_costs: 152000,
     total_profit: 73000,
   });
+  // No such endpoint exists yet, so everything on screen is placeholder data.
+  const [isLive, setIsLive] = useState(false);
 
   useEffect(() => {
     fetchProfitability();
@@ -30,14 +33,17 @@ export default function RouteProfitability() {
       if (res.data?.routes) {
         setRoutes(res.data.routes);
         setSummary(res.data.summary || {});
+        setIsLive(true);
       }
     } catch (err) {
-      // Use preloaded mock analytics if backend endpoint is unmounted
+      // Endpoint not implemented — keep the placeholders, but say so on screen.
+      setIsLive(false);
     }
   };
 
   return (
     <div className="space-y-6">
+      {!isLive && <DemoDataNotice needs="per-trip ticket revenue and operating cost data" />}
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <SummaryCard

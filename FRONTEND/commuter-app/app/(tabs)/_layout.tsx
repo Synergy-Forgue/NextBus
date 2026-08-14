@@ -3,6 +3,14 @@ import { Tabs } from 'expo-router';
 import { Text } from 'react-native';
 import { BRAND } from '@/src/styles/brand';
 
+/**
+ * Commuter bottom tabs.
+ *
+ * Every route file in this directory must be declared here — expo-router adds
+ * undeclared files to the bar with a default label and no icon, which is how
+ * Explore and Saved previously appeared unfinished. Order follows
+ * docs/information-architecture.md.
+ */
 export default function TabLayout() {
   return (
     <Tabs
@@ -19,7 +27,7 @@ export default function TabLayout() {
           height: 64,
         },
         tabBarLabelStyle: {
-          fontSize: 11,
+          fontSize: 10,
           fontWeight: '700',
           marginTop: 4,
         },
@@ -30,15 +38,31 @@ export default function TabLayout() {
         options={{
           title: 'Home',
           tabBarLabel: 'Home',
-          tabBarIcon: ({ color }) => <Text style={{ fontSize: 22, color }}>🏠</Text>,
+          tabBarIcon: ({ color }) => <Text style={{ fontSize: 20, color }}>🏠</Text>,
+        }}
+      />
+      <Tabs.Screen
+        name="explore"
+        options={{
+          title: 'Explore',
+          tabBarLabel: 'Explore',
+          tabBarIcon: ({ color }) => <Text style={{ fontSize: 20, color }}>🧭</Text>,
         }}
       />
       <Tabs.Screen
         name="map"
         options={{
-          title: 'Map',
-          tabBarLabel: 'Map',
-          tabBarIcon: ({ color }) => <Text style={{ fontSize: 22, color }}>🗺️</Text>,
+          title: 'Track',
+          tabBarLabel: 'Track',
+          tabBarIcon: ({ color }) => <Text style={{ fontSize: 20, color }}>🗺️</Text>,
+        }}
+      />
+      <Tabs.Screen
+        name="saved-routes"
+        options={{
+          title: 'Saved',
+          tabBarLabel: 'Saved',
+          tabBarIcon: ({ color }) => <Text style={{ fontSize: 20, color }}>⭐</Text>,
         }}
       />
       <Tabs.Screen
@@ -46,7 +70,7 @@ export default function TabLayout() {
         options={{
           title: 'Alerts',
           tabBarLabel: 'Alerts',
-          tabBarIcon: ({ color }) => <Text style={{ fontSize: 22, color }}>🔔</Text>,
+          tabBarIcon: ({ color }) => <Text style={{ fontSize: 20, color }}>🔔</Text>,
         }}
       />
       <Tabs.Screen
@@ -54,7 +78,7 @@ export default function TabLayout() {
         options={{
           title: 'Profile',
           tabBarLabel: 'Profile',
-          tabBarIcon: ({ color }) => <Text style={{ fontSize: 22, color }}>👤</Text>,
+          tabBarIcon: ({ color }) => <Text style={{ fontSize: 20, color }}>👤</Text>,
         }}
       />
     </Tabs>
