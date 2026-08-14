@@ -11,17 +11,39 @@ import { Text, Card, Button, Divider, Chip, Icon } from 'react-native-paper'
 import useCommuterStore from '../store/useCommuterStore'
 import { routeService } from '../services/routeService'
 import { CONSTANTS } from '../utils/constants'
+import { cityIdForCoords, getCity } from '../utils/cities'
 
 export default function BusDetailsScreen({ route, navigation }: any) {
   const { params } = route
-  const bus = params?.bus || {}
+  const paramBus = params?.bus || {}
 
   const {
     setSelectedRoute,
     setSelectedBus,
     addSavedRoute,
     savedRoutes,
+    busPositions,
   } = useCommuterStore()
+
+  // The bus handed over in navigation params is a snapshot. Re-read it from the
+  // live store each render so ETAs count down and status changes show up while
+  // this screen is open, instead of freezing at whatever was true on tap.
+  const bus = { ...paramBus, ...(busPositions?.[paramBus.busId] ?? {}) }
+
+  /** Stops the bus has yet to reach; passed stops carry eta_seconds: null. */
+  const etaByStopId = new Map<number, number>()
+  for (const e of bus.stop_etas || []) {
+    if (e?.eta_seconds !== null && e?.eta_seconds !== undefined) {
+      etaByStopId.set(Number(e.stop_id), Number(e.eta_seconds))
+    }
+  }
+  const nextStopIndex = Number(bus.nextStopIndex ?? -1)
+
+  const formatEta = (seconds?: number) => {
+    if (seconds === undefined) return null
+    if (seconds < 60) return 'Arriving'
+    return `${Math.round(seconds / 60)} min`
+  }
 
   const [stops, setStops] = useState<any[]>([])
   const [loadingStops, setLoadingStops] = useState(true)
@@ -87,8 +109,33 @@ export default function BusDetailsScreen({ route, navigation }: any) {
     )
   }
 
-  const startStopName = stops[0]?.stop_name || bus.source || 'RTC Complex'
-  const endStopName = stops[stops.length - 1]?.stop_name || bus.destination || 'Kailasagiri'
+  const startStopName = stops[0]?.stop_name || bus.source || '—'
+  const endStopName = stops[stops.length - 1]?.stop_name || bus.destination || '—'
+
+  // Headline ETA is the next stop the bus will reach, which is what a waiting
+  // commuter needs, rather than the end of the line.
+  const nextStop = (bus.stop_etas || []).find(
+    (s: any) => s?.eta_seconds !== null && s?.eta_seconds !== undefined
+  )
+  const nextStopEtaText = nextStop ? formatEta(Number(nextStop.eta_seconds)) : null
+
+  const occupancyPercent =
+    bus.occupancy_count != null
+      ? Math.min(100, Math.round((Number(bus.occupancy_count) / (bus.capacity || 50)) * 100))
+      : null
+
+  // Same distance-based rule the search results use, so the two agree.
+  const fare = stops.length > 1 ? Math.max(15, 15 + Math.max(0, stops.length - 2) * 2) : null
+
+  // Operator follows the network the bus is actually on — the old label said
+  // "APSRTC City Metro" for every vehicle regardless of city.
+  const operatorCity =
+    bus.lat != null && bus.lng != null
+      ? getCity(cityIdForCoords(Number(bus.lat), Number(bus.lng)))
+      : stops[0]
+      ? getCity(cityIdForCoords(Number(stops[0].latitude), Number(stops[0].longitude)))
+      : undefined
+  const operatorLabel = operatorCity ? operatorCity.region : 'Operator unknown'
 
   return (
     <View style={styles.container}>
@@ -117,22 +164,29 @@ export default function BusDetailsScreen({ route, navigation }: any) {
 
             <Divider style={styles.divider} />
 
+            {/* Every figure here is live telemetry or an explicit dash. The
+                previous defaults (8 min, 25%, ₹15, 25 km/h) rendered whenever
+                data was missing and were indistinguishable from real values. */}
             <View style={styles.statsGrid}>
               <View style={styles.statItem}>
-                <Text style={styles.statValue}>{bus.eta || 8}m</Text>
-                <Text style={styles.statLabel}>ETA</Text>
+                <Text style={styles.statValue}>
+                  {nextStopEtaText ?? '—'}
+                </Text>
+                <Text style={styles.statLabel}>{nextStopEtaText ? 'Next stop' : 'ETA'}</Text>
               </View>
               <View style={styles.statItem}>
-                <Text style={styles.statValue}>{bus.crowdLevel || bus.occupancy || 25}%</Text>
+                <Text style={styles.statValue}>
+                  {occupancyPercent != null ? `${occupancyPercent}%` : '—'}
+                </Text>
                 <Text style={styles.statLabel}>Crowd</Text>
               </View>
               <View style={styles.statItem}>
-                <Text style={styles.statValue}>₹15</Text>
+                <Text style={styles.statValue}>{fare != null ? `₹${fare}` : '—'}</Text>
                 <Text style={styles.statLabel}>Fare</Text>
               </View>
               <View style={styles.statItem}>
                 <Text style={styles.statValue}>
-                  {bus.speed || 25}
+                  {bus.speed != null ? bus.speed : '—'}
                   {'\n'}
                   km/h
                 </Text>
@@ -150,13 +204,13 @@ export default function BusDetailsScreen({ route, navigation }: any) {
             <View style={styles.infoRow}>
               <Text style={styles.infoLabel}>License Plate</Text>
               <Text style={styles.infoValue}>
-                {bus.licensePlate || bus.license_plate || 'AP 31 TV 1001'}
+                {bus.licensePlate || bus.license_plate || '—'}
               </Text>
             </View>
             <Divider style={styles.divider} />
             <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Vehicle Type</Text>
-              <Text style={styles.infoValue}>APSRTC City Metro (EV/Diesel)</Text>
+              <Text style={styles.infoLabel}>Operator</Text>
+              <Text style={styles.infoValue}>{operatorLabel}</Text>
             </View>
             <Divider style={styles.divider} />
             <View style={styles.infoRow}>
@@ -185,24 +239,53 @@ export default function BusDetailsScreen({ route, navigation }: any) {
             ) : stops.length === 0 ? (
               <Text style={styles.noStopsText}>No stop sequence available</Text>
             ) : (
-              stops.map((stop: any, idx: number) => (
-                <View key={stop.stop_id || idx}>
-                  <View style={styles.stopItem}>
-                    <View style={styles.stopDot}>
-                      <Text style={styles.stopDotNum}>{idx + 1}</Text>
+              stops.map((stop: any, idx: number) => {
+                const eta = etaByStopId.get(Number(stop.stop_id))
+                const isPassed = nextStopIndex >= 0 && idx < nextStopIndex
+                const isNext = nextStopIndex >= 0 && idx === nextStopIndex
+                const etaText = formatEta(eta)
+
+                return (
+                  <View key={stop.stop_id || idx}>
+                    <View style={styles.stopItem}>
+                      <View
+                        style={[
+                          styles.stopDot,
+                          isPassed && styles.stopDotPassed,
+                          isNext && styles.stopDotNext,
+                        ]}
+                      >
+                        <Text style={styles.stopDotNum}>{isPassed ? '✓' : idx + 1}</Text>
+                      </View>
+                      <View style={styles.stopInfo}>
+                        <Text style={[styles.stopName, isPassed && styles.stopNamePassed]}>
+                          {stop.stop_name}
+                        </Text>
+                        <Text style={styles.stopDistance}>
+                          {isNext ? 'Next stop' : isPassed ? 'Departed' : `Stop ${stop.stop_order}`}
+                        </Text>
+                      </View>
+
+                      {/* Live arrival time for every upcoming stop, not just the
+                          end of the line. */}
+                      {isPassed ? (
+                        <Text style={styles.etaPassed}>—</Text>
+                      ) : etaText ? (
+                        <View style={[styles.etaPill, isNext && styles.etaPillNext]}>
+                          <Text style={[styles.etaPillText, isNext && styles.etaPillTextNext]}>
+                            {etaText}
+                          </Text>
+                        </View>
+                      ) : (
+                        <Text style={styles.etaPassed}>—</Text>
+                      )}
                     </View>
-                    <View style={styles.stopInfo}>
-                      <Text style={styles.stopName}>{stop.stop_name}</Text>
-                      <Text style={styles.stopDistance}>
-                        Sequence #{stop.stop_order}
-                      </Text>
-                    </View>
+                    {idx < stops.length - 1 && (
+                      <View style={[styles.stopLine, isPassed && styles.stopLinePassed]} />
+                    )}
                   </View>
-                  {idx < stops.length - 1 && (
-                    <View style={styles.stopLine} />
-                  )}
-                </View>
-              ))
+                )
+              })
             )}
           </Card.Content>
         </Card>
@@ -378,6 +461,21 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#999',
   },
+  stopDotPassed: { backgroundColor: '#CBD5E1' },
+  stopDotNext: { backgroundColor: CONSTANTS.Colors.success ?? '#16A34A' },
+  stopNamePassed: { color: '#94A3B8' },
+  stopLinePassed: { backgroundColor: '#E2E8F0' },
+  etaPill: {
+    backgroundColor: '#EEF2FF',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    marginLeft: 8,
+  },
+  etaPillNext: { backgroundColor: '#DCFCE7' },
+  etaPillText: { fontSize: 12, fontWeight: '800', color: CONSTANTS.Colors.primary },
+  etaPillTextNext: { color: '#15803D' },
+  etaPassed: { fontSize: 12, color: '#CBD5E1', marginLeft: 8, fontWeight: '700' },
   noStopsText: {
     color: '#999',
     fontSize: 12,

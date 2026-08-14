@@ -20,8 +20,8 @@ export default function Dashboard() {
   const [stats, setStats] = useState({
     activeBuses: 0,
     activeAlerts: 0,
-    profitableRoutes: 5,
-    totalRevenue: 145000,
+    profitableRoutes: 0,
+    totalRevenue: null,
   });
   const [loading, setLoading] = useState(true);
 
@@ -47,8 +47,11 @@ export default function Dashboard() {
       setStats({
         activeBuses: fleetList.length,
         activeAlerts: activeAlertsList.length,
+        // A real count from /api/routes, not a profitability judgement.
         profitableRoutes: routeCount,
-        totalRevenue: Math.max(120000, fleetList.length * 28500),
+        // The schema has no fare or cost data, so revenue cannot be computed.
+        // Showing a number derived from bus count would be fabricated.
+        totalRevenue: null,
       });
 
       setLoading(false);
@@ -211,10 +214,16 @@ export default function Dashboard() {
         {/* Stats Cards */}
         <div className="p-6 bg-gradient-to-b from-slate-800/50 to-transparent border-b border-slate-800">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <StatCard icon="🚌" label="Active Buses" value={stats.activeBuses} color="blue" />
-            <StatCard icon="💰" label="Daily Revenue" value={`₹${(stats.totalRevenue / 1000).toFixed(1)}k`} color="green" />
+            <StatCard icon="🚌" label="Buses Reporting" value={stats.activeBuses} color="blue" />
+            <StatCard
+              icon="💰"
+              label="Daily Revenue"
+              value={stats.totalRevenue == null ? 'Not tracked' : `₹${(stats.totalRevenue / 1000).toFixed(1)}k`}
+              color="green"
+              note={stats.totalRevenue == null ? 'No ticketing data captured yet' : undefined}
+            />
             <StatCard icon="⚠️" label="Active Alerts" value={stats.activeAlerts} color="red" />
-            <StatCard icon="✨" label="Profitable Routes" value={stats.profitableRoutes} color="purple" />
+            <StatCard icon="🛣️" label="Routes in Service" value={stats.profitableRoutes} color="purple" />
           </div>
         </div>
 
@@ -280,7 +289,7 @@ export default function Dashboard() {
   );
 }
 
-function StatCard({ icon, label, value, color = 'blue' }) {
+function StatCard({ icon, label, value, color = 'blue', note }) {
   const gradients = {
     blue: 'from-blue-500/20 to-blue-600/20 border-blue-500/30',
     red: 'from-red-500/20 to-red-600/20 border-red-500/30',
@@ -302,6 +311,7 @@ function StatCard({ icon, label, value, color = 'blue' }) {
       </div>
       <p className="text-slate-400 text-sm font-medium mb-2">{label}</p>
       <p className={`text-3xl font-bold ${textColors[color]}`}>{value}</p>
+      {note && <p className="text-xs text-slate-500 mt-2">{note}</p>}
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import DemoDataNotice from './DemoDataNotice.jsx';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -17,6 +18,7 @@ export default function DeadKMAnalysis() {
     total_dead_km: 66.4,
     potential_savings: '₹2,656',
   });
+  const [isLive, setIsLive] = useState(false);
 
   useEffect(() => {
     fetchDeadKM();
@@ -28,14 +30,17 @@ export default function DeadKMAnalysis() {
       if (res.data?.data) {
         setData(res.data.data);
         setSummary(res.data.summary || {});
+        setIsLive(true);
       }
     } catch (err) {
-      // Use preloaded mock analytics if backend endpoint is unmounted
+      // Endpoint not implemented — keep the placeholders, but say so on screen.
+      setIsLive(false);
     }
   };
 
   return (
     <div className="space-y-6">
+      {!isLive && <DemoDataNotice needs="depot locations and non-revenue trip legs" />}
       {/* Summary */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="bg-white border border-slate-200 rounded-lg p-4">

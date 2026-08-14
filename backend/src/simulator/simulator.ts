@@ -17,7 +17,11 @@ import { BusAgent, StopInfo } from './busAgent';
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 const WS_URL   = process.env.SIM_WS_URL   || 'ws://localhost:3000/ws/publish';
-const HTTP_URL = process.env.SIM_HTTP_URL || WS_URL.replace(/^ws/, 'http').replace(/\/ws\/publish$/, '');
+// Derive the REST base from the WS URL. Handle wss:// → https:// before ws:// → http://,
+// otherwise a plain /^ws/ replace turns "wss://host" into the invalid "httpss://host".
+const HTTP_URL =
+  process.env.SIM_HTTP_URL ||
+  WS_URL.replace(/^wss:/, 'https:').replace(/^ws:/, 'http:').replace(/\/ws\/publish$/, '');
 const TICK_MS  = parseInt(process.env.SIM_TICK_MS || '2000'); // 2s between GPS ticks
 
 // ─── Database Pool (optional fallback for local dev) ──────────────────────────
@@ -157,6 +161,63 @@ function connectWs(): Promise<WebSocket> {
   });
 }
 
+const RECONNECT_BASE_MS = 3000;
+const RECONNECT_MAX_MS  = 60_000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+/**
+ * Keeps a live publisher socket, retrying indefinitely with capped exponential
+ * backoff. Hosted backends drop idle sockets routinely, so a single failed
+ * retry must not take the simulator down — it is meant to run for a whole demo.
+ * Existing agents are re-pointed at the new socket so buses keep their place on
+ * the route instead of restarting from the first stop, and so that reconnecting
+ * does not spawn a second set of agents publishing duplicate telemetry.
+ */
+async function maintainConnection(agents: BusAgent[]): Promise<void> {
+  let attempt = 0;
+
+  for (;;) {
+    let ws: WebSocket;
+    try {
+      ws = await connectWs();
+    } catch {
+      attempt += 1;
+      const delay = Math.min(RECONNECT_BASE_MS * 2 ** (attempt - 1), RECONNECT_MAX_MS);
+      console.warn(`⚠️  Cannot reach ${WS_URL} (attempt ${attempt}). Retrying in ${delay / 1000}s...`);
+      await sleep(delay);
+      continue;
+    }
+
+    attempt = 0;
+    console.log(`🔌 Connected to backend WebSocket at ${WS_URL}\n`);
+    agents.forEach((a) => a.setSocket(ws));
+
+    ws.on('message', (raw) => {
+      try {
+        const msg = JSON.parse(raw.toString());
+        if (msg.type === 'ERROR') {
+          console.warn(`[WS ACK] ⚠️  Error from server: ${msg.message}`);
+        }
+      } catch {}
+    });
+
+    // Wait for this socket to die, then loop round and reconnect.
+    await new Promise<void>((resolve) => {
+      ws.once('close', () => {
+        console.warn('\n⚠️  WebSocket connection closed. Reconnecting...');
+        resolve();
+      });
+      // 'error' is always followed by 'close', so resolving here would double-fire.
+      ws.on('error', () => {});
+    });
+
+    await sleep(RECONNECT_BASE_MS);
+  }
+}
+
 async function main(): Promise<void> {
   console.log('\n🛰️  NXTBus Smart Simulator starting...');
   console.log(`   Backend WS : ${WS_URL}`);
@@ -169,57 +230,39 @@ async function main(): Promise<void> {
   );
   console.log('');
 
-  let ws: WebSocket;
-  try {
-    ws = await connectWs();
-    console.log(`🔌 Connected to backend WebSocket at ${WS_URL}\n`);
-  } catch (err) {
-    console.error(`❌ Could not connect to backend WebSocket at ${WS_URL}\n`);
-    process.exit(1);
-  }
-
-  ws.on('message', (raw) => {
-    try {
-      const msg = JSON.parse(raw.toString());
-      if (msg.type === 'ERROR') {
-        console.warn(`[WS ACK] ⚠️  Error from server: ${msg.message}`);
-      }
-    } catch {}
-  });
-
-  ws.on('close', () => {
-    console.warn('\n⚠️  WebSocket connection closed. Reconnecting in 3s...');
-    setTimeout(() => {
-      main().catch(console.error);
-    }, 3000);
-  });
-
+  // Agents are built once and reused across reconnects. They start with no
+  // socket and simply drop ticks until maintainConnection() hands them one.
   const agents: BusAgent[] = [];
   for (const trip of trips) {
     const stops = await loadStopsForRoute(trip.route_id);
     if (stops.length < 2) continue;
 
-    const agent = new BusAgent({
-      trip_id:       trip.trip_id,
-      license_plate: trip.license_plate,
-      capacity:      trip.capacity,
-      stops,
-      ws,
-      intervalMs:    TICK_MS,
-    });
-
-    agents.push(agent);
-    const staggerMs = agents.length * 3000;
-    setTimeout(() => agent.start(), staggerMs);
+    agents.push(
+      new BusAgent({
+        trip_id:       trip.trip_id,
+        license_plate: trip.license_plate,
+        capacity:      trip.capacity,
+        stops,
+        ws:            null,
+        intervalMs:    TICK_MS,
+      })
+    );
   }
 
   process.on('SIGINT', () => {
     console.log('\n\n⛔ Shutting down simulator...');
     agents.forEach((a) => a.stop());
-    ws.close();
     try { pool.end(); } catch {}
     setTimeout(() => process.exit(0), 500);
   });
+
+  const connection = maintainConnection(agents);
+
+  agents.forEach((agent, i) => {
+    setTimeout(() => agent.start(), (i + 1) * 3000);
+  });
+
+  await connection;
 }
 
 main().catch((err) => {
