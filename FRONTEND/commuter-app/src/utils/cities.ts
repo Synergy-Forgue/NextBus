@@ -32,12 +32,12 @@ export const CITIES: CityDef[] = [
     center: { latitude: 17.7261, longitude: 83.3085 },
   },
   {
-    id: 'bengaluru',
-    name: 'Bengaluru',
-    region: 'Karnataka · BMTC',
-    emoji: '🌆',
-    bounds: [12.7, 13.2, 77.4, 77.8],
-    center: { latitude: 12.9716, longitude: 77.5946 },
+    id: 'mysuru',
+    name: 'Mysuru',
+    region: 'Karnataka · KSRTC',
+    emoji: '🏛️',
+    bounds: [12.2, 12.5, 76.5, 76.8],
+    center: { latitude: 12.3052, longitude: 76.6552 },
   },
 ];
 
