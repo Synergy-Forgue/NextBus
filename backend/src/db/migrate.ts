@@ -37,7 +37,13 @@ const sql = fs.readFileSync(fullPath, 'utf8');
 
 // Refuse to run anything destructive through this path — that is setup-db's job
 // and it should never be aimed at a deployed database by accident.
-const destructive = /\b(DROP\s+TABLE|TRUNCATE|DELETE\s+FROM)\b/i.exec(sql);
+// Comments are stripped first: a header documenting "no DROP, no TRUNCATE"
+// must not trip the guard it is describing.
+const executableSql = sql
+  .replace(/--[^\n]*/g, ' ')
+  .replace(/\/\*[\s\S]*?\*\//g, ' ');
+
+const destructive = /\b(DROP\s+TABLE|TRUNCATE|DELETE\s+FROM)\b/i.exec(executableSql);
 if (destructive) {
   console.error(`\n❌ Refusing to run: this file contains "${destructive[0]}".`);
   console.error('   Migrations run by this script must be additive.\n');
