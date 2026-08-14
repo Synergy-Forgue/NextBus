@@ -1,10 +1,9 @@
-import React, { useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
-  TextInput,
   TouchableOpacity,
   ActivityIndicator,
 } from 'react-native'
@@ -12,26 +11,78 @@ import { LinearGradient } from 'expo-linear-gradient'
 import useCommuterStore from '../store/useCommuterStore'
 import { routeService } from '../services/routeService'
 import { BRAND } from '../styles/brand'
+import StopPicker from '../components/StopPicker'
+import { groupStopsByCity, CityDef, CityStop } from '../utils/cities'
 
 /**
  * Search & Trip Planner:
- * Searches real routes, stops, and live bus positions from Railway backend.
- * Selecting a route establishes the Journey Context in useCommuterStore and
- * navigates directly to the live contextual map.
+ * Searches real routes, stops, and live bus positions from the backend.
+ *
+ * Origin and destination are chosen from the real stop list for the selected
+ * city rather than typed free-hand — a typo used to produce an unexplained
+ * "no routes found", because the backend matches stop names with ILIKE.
+ * Cities are derived from stop coordinates, and only cities that actually have
+ * stops in the connected database are offered.
  */
-const POPULAR = ['RTC Complex', 'RK Beach', 'Kailasagiri', 'Jagadamba', 'Bheemili', 'Gajuwaka']
-
 export default function SearchRoutesScreen({ navigation }: any) {
-  const [from, setFrom] = useState('RTC Complex')
-  const [to, setTo] = useState('Kailasagiri')
+  const [cities, setCities] = useState<{ city: CityDef; stops: CityStop[] }[]>([])
+  const [cityId, setCityId] = useState<string | null>(null)
+  const [from, setFrom] = useState<CityStop | null>(null)
+  const [to, setTo] = useState<CityStop | null>(null)
+  const [picking, setPicking] = useState<'from' | 'to' | null>(null)
+
+  const [loadingStops, setLoadingStops] = useState(true)
   const [loading, setLoading] = useState(false)
   const [results, setResults] = useState<any[] | null>(null)
   const { setSelectedRoute, setSelectedBus, addSavedRoute } = useCommuterStore()
 
+  // Load the stop master list once and bucket it into cities.
+  useEffect(() => {
+    let cancelled = false
+    routeService
+      .getStops()
+      .then((rows) => {
+        if (cancelled) return
+        const grouped = groupStopsByCity(rows as any[])
+        setCities(grouped)
+        setCityId((current) => current ?? grouped[0]?.city.id ?? null)
+      })
+      .catch(() => {
+        if (!cancelled) setCities([])
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingStops(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const activeCity = useMemo(() => cities.find((c) => c.city.id === cityId), [cities, cityId])
+  const cityStops = activeCity?.stops ?? []
+
+  // Switching city invalidates a journey planned in the previous one.
+  const handleCityChange = (id: string) => {
+    if (id === cityId) return
+    setCityId(id)
+    setFrom(null)
+    setTo(null)
+    setResults(null)
+  }
+
+  const canSearch = !!from && !!to && from.stop_id !== to.stop_id
+
+  const swapEnds = () => {
+    setFrom(to)
+    setTo(from)
+    setResults(null)
+  }
+
   const findRoutes = async () => {
+    if (!canSearch) return
     setLoading(true)
     try {
-      const res = await routeService.searchRoutes(from, to, 'fastest')
+      const res = await routeService.searchRoutes(from!.stop_name, to!.stop_name, 'fastest')
       setResults(res)
     } catch {
       setResults([])
@@ -50,13 +101,25 @@ export default function SearchRoutesScreen({ navigation }: any) {
     }
     setSelectedRoute(routeObj)
     if (res.bus) {
+      // Carry the full live state through, not just position. Dropping
+      // stop_etas/status here made the map banner read "ETA unavailable" for a
+      // bus that was in fact reporting ETAs.
       setSelectedBus({
-        busId: res.bus.id || res.bus.license_plate,
+        busId: String(res.bus.trip_id ?? res.bus.id ?? res.bus.license_plate),
+        trip_id: res.bus.trip_id,
+        route_id: res.route.id,
         lat: res.bus.latitude,
         lng: res.bus.longitude,
         routeNo: res.route.route_number,
+        crowdLevel: Math.min(10, Math.round((res.bus.occupancy_count ?? 0) / 5)),
         speed: res.bus.speed,
-        eta: res.eta,
+        eta: res.eta ?? undefined,
+        licensePlate: res.bus.license_plate,
+        occupancy_count: res.bus.occupancy_count,
+        nextStopIndex: res.bus.nextStopIndex,
+        status: res.bus.status ?? 'LIVE',
+        last_updated: res.bus.last_updated,
+        stop_etas: res.bus.stop_etas ?? [],
       })
     }
     addSavedRoute(routeObj)
@@ -79,46 +142,127 @@ export default function SearchRoutesScreen({ navigation }: any) {
       <View style={styles.planCard}>
         <Text style={styles.planTitle}>Plan your trip</Text>
         <Text style={styles.planSub}>
-          Find the quickest route across Visakhapatnam.
+          {activeCity
+            ? `Find the quickest route across ${activeCity.city.name}.`
+            : 'Choose a city to start planning.'}
         </Text>
 
-        <View style={styles.inputWrap}>
-          <Text style={styles.inputIcon}>🟢</Text>
-          <TextInput
-            style={styles.input}
-            value={from}
-            onChangeText={setFrom}
-            placeholder="From (e.g. RTC Complex)"
-            placeholderTextColor={BRAND.textTertiary}
-          />
-        </View>
+        {/* City selector — only cities with stops in this database */}
+        {loadingStops ? (
+          <ActivityIndicator color={BRAND.primary} style={{ marginVertical: 14 }} />
+        ) : cities.length === 0 ? (
+          <Text style={styles.warn}>
+            Could not load stops from the server. Check your connection and try again.
+          </Text>
+        ) : (
+          <>
+            <Text style={styles.fieldLabel}>CITY</Text>
+            <View style={styles.cityRow}>
+              {cities.map(({ city, stops }) => {
+                const active = city.id === cityId
+                return (
+                  <TouchableOpacity
+                    key={city.id}
+                    style={[styles.cityChip, active && styles.cityChipActive]}
+                    onPress={() => handleCityChange(city.id)}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={styles.cityEmoji}>{city.emoji}</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.cityName, active && styles.cityNameActive]}>{city.name}</Text>
+                      <Text style={[styles.cityMeta, active && styles.cityMetaActive]}>
+                        {city.region} · {stops.length} stops
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                )
+              })}
+            </View>
 
-        <View style={styles.inputWrap}>
-          <Text style={styles.inputIcon}>📍</Text>
-          <TextInput
-            style={styles.input}
-            value={to}
-            onChangeText={setTo}
-            placeholder="To: Enter destination (e.g. Kailasagiri)"
-            placeholderTextColor={BRAND.textTertiary}
-          />
-        </View>
+            <Text style={styles.fieldLabel}>JOURNEY</Text>
 
-        <TouchableOpacity onPress={findRoutes} activeOpacity={0.85} disabled={loading}>
-          <LinearGradient
-            colors={BRAND.gradient}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.cta}
-          >
-            {loading ? (
-              <ActivityIndicator color="#FFF" />
-            ) : (
-              <Text style={styles.ctaText}>🧭  Find Routes</Text>
-            )}
-          </LinearGradient>
-        </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.selectWrap}
+              onPress={() => setPicking('from')}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.inputIcon}>🟢</Text>
+              <Text style={[styles.selectText, !from && styles.selectPlaceholder]} numberOfLines={1}>
+                {from ? from.stop_name : 'From — select boarding stop'}
+              </Text>
+              <Text style={styles.chevron}>▾</Text>
+            </TouchableOpacity>
+
+            <View style={styles.swapRow}>
+              <TouchableOpacity
+                style={styles.swapBtn}
+                onPress={swapEnds}
+                disabled={!from && !to}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.swapText}>⇅ Swap</Text>
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity
+              style={styles.selectWrap}
+              onPress={() => setPicking('to')}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.inputIcon}>📍</Text>
+              <Text style={[styles.selectText, !to && styles.selectPlaceholder]} numberOfLines={1}>
+                {to ? to.stop_name : 'To — select destination stop'}
+              </Text>
+              <Text style={styles.chevron}>▾</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={findRoutes}
+              activeOpacity={0.85}
+              disabled={loading || !canSearch}
+            >
+              <LinearGradient
+                colors={canSearch ? BRAND.gradient : ['#C7C9D9', '#B8BACB']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.cta}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#FFF" />
+                ) : (
+                  <Text style={styles.ctaText}>🧭  Find Routes</Text>
+                )}
+              </LinearGradient>
+            </TouchableOpacity>
+          </>
+        )}
       </View>
+
+      <StopPicker
+        visible={picking === 'from'}
+        title={`Boarding stop · ${activeCity?.city.name ?? ''}`}
+        stops={cityStops}
+        excludeStopId={to?.stop_id ?? null}
+        onSelect={(s) => {
+          setFrom(s)
+          setPicking(null)
+          setResults(null)
+        }}
+        onClose={() => setPicking(null)}
+      />
+
+      <StopPicker
+        visible={picking === 'to'}
+        title={`Destination · ${activeCity?.city.name ?? ''}`}
+        stops={cityStops}
+        excludeStopId={from?.stop_id ?? null}
+        onSelect={(s) => {
+          setTo(s)
+          setPicking(null)
+          setResults(null)
+        }}
+        onClose={() => setPicking(null)}
+      />
 
       {/* Results */}
       {results !== null && (
@@ -159,22 +303,27 @@ export default function SearchRoutesScreen({ navigation }: any) {
         </>
       )}
 
-      {/* Popular destinations */}
-      <Text style={styles.sectionLabel}>POPULAR DESTINATIONS</Text>
-      <View style={styles.chipsWrap}>
-        {POPULAR.map((p) => (
-          <TouchableOpacity
-            key={p}
-            style={styles.chip}
-            onPress={() => {
-              setTo(p)
-              findRoutes()
-            }}
-          >
-            <Text style={styles.chipText}>{p}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+      {/* Popular destinations — real stops from the selected city, not a
+          hardcoded list that only made sense for one network. */}
+      {cityStops.length > 0 && (
+        <>
+          <Text style={styles.sectionLabel}>POPULAR IN {activeCity?.city.name.toUpperCase()}</Text>
+          <View style={styles.chipsWrap}>
+            {cityStops.slice(0, 8).map((s) => (
+              <TouchableOpacity
+                key={s.stop_id}
+                style={styles.chip}
+                onPress={() => {
+                  setTo(s)
+                  setResults(null)
+                }}
+              >
+                <Text style={styles.chipText}>{s.stop_name}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </>
+      )}
 
       {/* Map preview */}
       <TouchableOpacity
@@ -238,13 +387,50 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginRight: 10,
   },
-  input: {
-    flex: 1,
-    height: 48,
-    fontSize: 14,
-    fontWeight: '600',
-    color: BRAND.text,
+  fieldLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+    color: BRAND.textTertiary,
+    marginBottom: 8,
+    marginTop: 4,
   },
+  cityRow: { gap: 8, marginBottom: 6 },
+  cityChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: BRAND.surfaceMuted,
+    borderRadius: BRAND.radius.lg,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderWidth: 1.5,
+    borderColor: 'transparent',
+  },
+  cityChipActive: {
+    borderColor: BRAND.primary,
+    backgroundColor: '#EEF2FF',
+  },
+  cityEmoji: { fontSize: 20 },
+  cityName: { fontSize: 14, fontWeight: '800', color: BRAND.text },
+  cityNameActive: { color: BRAND.primary },
+  cityMeta: { fontSize: 11, color: BRAND.textSecondary, marginTop: 1 },
+  cityMetaActive: { color: BRAND.primary },
+  selectWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: BRAND.surfaceMuted,
+    borderRadius: BRAND.radius.pill,
+    paddingHorizontal: 16,
+    height: 48,
+  },
+  selectText: { flex: 1, fontSize: 14, fontWeight: '600', color: BRAND.text },
+  selectPlaceholder: { color: BRAND.textTertiary, fontWeight: '500' },
+  chevron: { fontSize: 14, color: BRAND.textSecondary, marginLeft: 8 },
+  swapRow: { alignItems: 'flex-end', paddingVertical: 6 },
+  swapBtn: { paddingHorizontal: 12, paddingVertical: 4 },
+  swapText: { fontSize: 12, fontWeight: '700', color: BRAND.primary },
+  warn: { fontSize: 13, color: BRAND.danger, fontWeight: '600', marginVertical: 12 },
   cta: {
     height: 50,
     borderRadius: BRAND.radius.pill,

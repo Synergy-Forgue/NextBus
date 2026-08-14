@@ -12,6 +12,8 @@ import useCommuterStore from '../store/useCommuterStore'
 import useRealTimeBus from '../hooks/useRealTimeBus'
 import { routeService } from '../services/routeService'
 import { BRAND } from '../styles/brand'
+import AnimatedBusMarker from '../components/AnimatedBusMarker'
+import { cityIdForCoords, getCity } from '../utils/cities'
 
 /**
  * Home Map Screen (Live Transit Map):
@@ -143,6 +145,33 @@ export default function HomeMapScreen({ navigation }: any) {
     longitude: parseFloat(s.longitude),
   }))
 
+  // Split the route at the bus's current position so the part already covered
+  // reads as history and the part ahead reads as the live journey. A single
+  // flat line gave no sense of progress along the route.
+  const nextStopIndex = Math.min(
+    Math.max(Number(selectedBus?.nextStopIndex ?? 0), 0),
+    Math.max(polylineCoords.length - 1, 0)
+  )
+  const travelledCoords = polylineCoords.slice(0, nextStopIndex + 1)
+  const upcomingCoords = polylineCoords.slice(nextStopIndex)
+
+  // Label the network the user is actually looking at rather than assuming one.
+  const focusPoint = selectedBus
+    ? { lat: selectedBus.lat, lng: selectedBus.lng }
+    : polylineCoords[0]
+    ? { lat: polylineCoords[0].latitude, lng: polylineCoords[0].longitude }
+    : liveBuses[0]
+    ? { lat: (liveBuses[0] as any).lat, lng: (liveBuses[0] as any).lng }
+    : userLocation
+  const cityLabel = focusPoint
+    ? getCity(cityIdForCoords(focusPoint.lat, focusPoint.lng))?.name ?? 'Network'
+    : 'Network'
+
+  // Real next-stop ETA from backend telemetry — never a placeholder number.
+  const nextEta = (selectedBus?.stop_etas || []).find(
+    (s: any) => s.eta_seconds !== null && s.eta_seconds !== undefined
+  )
+
   return (
     <View style={styles.container}>
       <MapView
@@ -157,48 +186,82 @@ export default function HomeMapScreen({ navigation }: any) {
         }}
         showsUserLocation
       >
-        {/* Route Geometry Polyline */}
+        {/* Route geometry: a dark casing under a coloured core, so the line
+            stays legible over both pale roads and dark satellite imagery. */}
         {polylineCoords.length > 1 && (
-          <Polyline
-            coordinates={polylineCoords}
-            strokeColor={BRAND.primary}
-            strokeWidth={4}
-          />
+          <>
+            <Polyline
+              coordinates={polylineCoords}
+              strokeColor="rgba(15,23,42,0.35)"
+              strokeWidth={9}
+              lineCap="round"
+              lineJoin="round"
+              zIndex={1}
+            />
+            {travelledCoords.length > 1 && (
+              <Polyline
+                coordinates={travelledCoords}
+                strokeColor="rgba(100,116,139,0.85)"
+                strokeWidth={5}
+                lineCap="round"
+                lineJoin="round"
+                zIndex={2}
+              />
+            )}
+            <Polyline
+              coordinates={upcomingCoords}
+              strokeColor={BRAND.primary}
+              strokeWidth={5}
+              lineCap="round"
+              lineJoin="round"
+              zIndex={3}
+            />
+          </>
         )}
 
-        {/* Route Stop Markers */}
-        {routeStops.map((s: any, idx: number) => (
-          <Marker
-            key={`stop_${s.stop_id || idx}`}
-            coordinate={{
-              latitude: parseFloat(s.latitude),
-              longitude: parseFloat(s.longitude),
-            }}
-            title={s.stop_name || `Stop ${idx + 1}`}
-          >
-            <View style={styles.stopDot}>
-              <Text style={styles.stopNum}>{idx + 1}</Text>
-            </View>
-          </Marker>
-        ))}
-
-        {/* Live Bus Markers */}
-        {liveBuses.map((bus: any) => {
-          const isSelected = selectedBus?.busId === bus.busId || selectedRoute?.route_number === bus.routeNo
+        {/* Stop markers, styled by progress: passed, next, or upcoming. */}
+        {routeStops.map((s: any, idx: number) => {
+          const isPassed = idx < nextStopIndex
+          const isNext = idx === nextStopIndex && !!selectedBus
+          const isTerminus = idx === 0 || idx === routeStops.length - 1
           return (
             <Marker
-              key={bus.busId}
-              coordinate={{ latitude: bus.lat, longitude: bus.lng }}
-              onPress={() => handleBusPress(bus)}
-              zIndex={isSelected ? 10 : 1}
+              key={`stop_${s.stop_id || idx}`}
+              coordinate={{
+                latitude: parseFloat(s.latitude),
+                longitude: parseFloat(s.longitude),
+              }}
+              title={s.stop_name || `Stop ${idx + 1}`}
+              description={isNext ? 'Next stop' : isPassed ? 'Passed' : `Stop ${idx + 1}`}
+              anchor={{ x: 0.5, y: 0.5 }}
+              tracksViewChanges={false}
+              zIndex={isNext ? 6 : 4}
             >
-              <View style={[styles.busPill, isSelected && styles.busPillSelected]}>
-                <Text style={styles.busPillEmoji}>🚌</Text>
-                <Text style={styles.busPillText}>{bus.routeNo}</Text>
+              <View
+                style={[
+                  styles.stopDot,
+                  isTerminus && styles.stopDotTerminus,
+                  isPassed && styles.stopDotPassed,
+                  isNext && styles.stopDotNext,
+                ]}
+              >
+                <Text style={[styles.stopNum, isPassed && styles.stopNumPassed]}>{idx + 1}</Text>
               </View>
             </Marker>
           )
         })}
+
+        {/* Live buses — interpolated between telemetry frames. */}
+        {liveBuses.map((bus: any) => (
+          <AnimatedBusMarker
+            key={bus.busId}
+            bus={bus}
+            isSelected={
+              selectedBus?.busId === bus.busId || selectedRoute?.route_number === bus.routeNo
+            }
+            onPress={() => handleBusPress(bus)}
+          />
+        ))}
       </MapView>
 
       {/* Top Status & Context Bar */}
@@ -211,7 +274,10 @@ export default function HomeMapScreen({ navigation }: any) {
             ]}
           />
           <Text style={styles.livePillText}>
-            Visakhapatnam · {isConnected ? 'Live WSS' : 'Connecting…'}
+            {cityLabel} ·{' '}
+            {isConnected
+              ? `${liveBuses.length} bus${liveBuses.length === 1 ? '' : 'es'} live`
+              : 'Connecting…'}
           </Text>
         </View>
 
@@ -238,7 +304,10 @@ export default function HomeMapScreen({ navigation }: any) {
           </Text>
           {selectedBus?.speed != null && (
             <Text style={styles.bannerSpeed}>
-              ⚡ Speed: {selectedBus.speed} km/h • ETA: {selectedBus.eta || 8} min
+              ⚡ {selectedBus.speed} km/h
+              {nextEta
+                ? ` • ${nextEta.stop_name} in ${Math.max(1, Math.round(nextEta.eta_seconds / 60))} min`
+                : ' • ETA unavailable'}
             </Text>
           )}
         </View>
@@ -327,6 +396,26 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 10,
     fontWeight: '900',
+  },
+  stopNumPassed: { color: '#E2E8F0' },
+  stopDotTerminus: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    borderWidth: 3,
+    borderColor: '#FFFFFF',
+  },
+  stopDotPassed: {
+    backgroundColor: '#94A3B8',
+    opacity: 0.75,
+  },
+  stopDotNext: {
+    backgroundColor: BRAND.success,
+    borderWidth: 3,
+    borderColor: '#FFFFFF',
+    width: 26,
+    height: 26,
+    borderRadius: 13,
   },
   topOverlay: {
     position: 'absolute',
