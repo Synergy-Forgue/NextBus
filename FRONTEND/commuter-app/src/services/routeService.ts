@@ -129,6 +129,26 @@ export default class RouteService {
     }
   }
 
+  /**
+   * Road-following polyline for a route, as {latitude, longitude} in travel
+   * order. Precomputed server-side; returns null when a route has no stored
+   * geometry so callers can fall back to joining stop coordinates.
+   */
+  async getRouteGeometry(routeId: number): Promise<{ latitude: number; longitude: number }[] | null> {
+    if (!routeId || isNaN(Number(routeId))) return null;
+    try {
+      const res = await axios.get(`${API_URL}/api/routes/${routeId}/geometry`);
+      const coords = res.data?.coordinates;
+      if (!Array.isArray(coords) || coords.length < 2) return null;
+      // Stored as GeoJSON [lng, lat]; react-native-maps wants {latitude, longitude}.
+      return coords
+        .map((c: any) => ({ latitude: Number(c[1]), longitude: Number(c[0]) }))
+        .filter((p: any) => Number.isFinite(p.latitude) && Number.isFinite(p.longitude));
+    } catch {
+      return null;
+    }
+  }
+
   async getRouteStops(routeId: number): Promise<RouteStop[]> {
     if (!routeId || isNaN(Number(routeId))) return [];
     try {

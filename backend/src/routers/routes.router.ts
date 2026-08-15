@@ -138,4 +138,36 @@ router.get('/:id/stops', async (req: Request, res: Response, next: NextFunction)
   }
 });
 
+/**
+ * GET /api/routes/:id/geometry
+ * Road-following polyline for a route, as GeoJSON LineString coordinates
+ * ([lng, lat] pairs in travel order).
+ *
+ * Geometry is precomputed by scripts/fetch-route-geometry.ts and read straight
+ * from the table — no routing service is called while serving a request.
+ *
+ * Returns 404 when a route has no geometry yet, so clients can fall back to
+ * joining stop coordinates rather than rendering nothing.
+ */
+router.get('/:id/geometry', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const result = await pool.query(
+      `SELECT route_id, coordinates, distance_m, duration_s, source, generated_at
+         FROM route_geometry
+        WHERE route_id = $1`,
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      res.status(404).json({ error: 'No geometry stored for this route' });
+      return;
+    }
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    next(err);
+  }
+});
+
 export default router;

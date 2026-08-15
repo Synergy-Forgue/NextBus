@@ -135,12 +135,33 @@ export default function LiveFleetMap({ role, buses: propBuses }) {
         const routes = Array.isArray(routesRes.data) ? routesRes.data : [];
         const withStops = await Promise.all(
           routes.map(async (r) => {
+            let stops = [];
+            let path = null;
+
             try {
               const stopsRes = await axios.get(`${API_URL}/api/routes/${r.id}/stops`);
-              return { route: r, stops: Array.isArray(stopsRes.data) ? stopsRes.data : [] };
+              stops = Array.isArray(stopsRes.data) ? stopsRes.data : [];
             } catch {
-              return { route: r, stops: [] };
+              stops = [];
             }
+
+            // Road-following geometry where it exists. Joining stops draws
+            // straight lines across water and buildings, which misrepresents
+            // where a bus can actually be — bad for judging bunching or gaps.
+            try {
+              const geomRes = await axios.get(`${API_URL}/api/routes/${r.id}/geometry`);
+              const coords = geomRes.data?.coordinates;
+              if (Array.isArray(coords) && coords.length > 1) {
+                // Stored as GeoJSON [lng, lat]; Leaflet wants [lat, lng].
+                path = coords
+                  .map((c) => [Number(c[1]), Number(c[0])])
+                  .filter((p) => Number.isFinite(p[0]) && Number.isFinite(p[1]));
+              }
+            } catch {
+              path = null; // 404 simply means geometry has not been generated yet
+            }
+
+            return { route: r, stops, path };
           })
         );
         if (!cancelled) setRouteGeometry(withStops.filter((r) => r.stops.length > 1));
@@ -328,10 +349,14 @@ export default function LiveFleetMap({ role, buses: propBuses }) {
 
             {/* Route geometry — without the network drawn, an operator cannot
                 see bunching or gaps, only unanchored dots. */}
-            {routeGeometry.map(({ route, stops }) => (
+            {routeGeometry.map(({ route, stops, path }) => (
               <React.Fragment key={route.id}>
                 <Polyline
-                  positions={stops.map((s) => [Number(s.latitude), Number(s.longitude)])}
+                  positions={
+                    path && path.length > 1
+                      ? path
+                      : stops.map((s) => [Number(s.latitude), Number(s.longitude)])
+                  }
                   pathOptions={{ color: '#6366f1', weight: 3, opacity: 0.45 }}
                 />
                 {stops.map((s) => (

@@ -9,7 +9,8 @@
     "build": "tsc",
     "sim": "tsx src/simulator/simulator.ts",
     "setup-db": "tsx src/db/setup-db.ts",
-    "migrate": "tsx src/db/migrate.ts"
+    "migrate": "tsx src/db/migrate.ts",
+    "fetch-geometry": "tsx src/scripts/fetch-route-geometry.ts"
   },
   "keywords": [],
   "author": "",

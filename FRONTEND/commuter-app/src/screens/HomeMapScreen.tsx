@@ -29,6 +29,7 @@ export default function HomeMapScreen({ navigation }: any) {
   const [userLocation, setUserLocation] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [routeStops, setRouteStops] = useState<any[]>([])
+  const [routeGeometry, setRouteGeometry] = useState<{ latitude: number; longitude: number }[] | null>(null)
   const mapRef = useRef<MapView>(null)
 
   const {
@@ -53,6 +54,28 @@ export default function HomeMapScreen({ navigation }: any) {
       loadStopsForRoute(selectedRoute.id)
     } else {
       setRouteStops([])
+    }
+  }, [selectedRoute])
+
+  // Road-following geometry for the selected route. Cancellation guard stops a
+  // slow response for a previous route overwriting the current one.
+  useEffect(() => {
+    if (!selectedRoute?.id) {
+      setRouteGeometry(null)
+      return
+    }
+    let cancelled = false
+    setRouteGeometry(null)
+    routeService
+      .getRouteGeometry(selectedRoute.id)
+      .then((geom) => {
+        if (!cancelled) setRouteGeometry(geom)
+      })
+      .catch(() => {
+        if (!cancelled) setRouteGeometry(null)
+      })
+    return () => {
+      cancelled = true
     }
   }, [selectedRoute])
 
@@ -145,15 +168,39 @@ export default function HomeMapScreen({ navigation }: any) {
     longitude: parseFloat(s.longitude),
   }))
 
-  // Split the route at the bus's current position so the part already covered
-  // reads as history and the part ahead reads as the live journey. A single
-  // flat line gave no sense of progress along the route.
   const nextStopIndex = Math.min(
     Math.max(Number(selectedBus?.nextStopIndex ?? 0), 0),
-    Math.max(polylineCoords.length - 1, 0)
+    Math.max(routeStops.length - 1, 0)
   )
-  const travelledCoords = polylineCoords.slice(0, nextStopIndex + 1)
-  const upcomingCoords = polylineCoords.slice(nextStopIndex)
+
+  // Prefer road-following geometry from the backend. Joining stop coordinates
+  // draws straight lines that cut across water and buildings; that path is now
+  // only a fallback for routes whose geometry has not been generated yet.
+  const linePath = routeGeometry && routeGeometry.length > 1 ? routeGeometry : polylineCoords
+
+  // Split the line at the bus so covered ground reads as history and the rest
+  // reads as the live journey. With dense geometry there is no stop index to
+  // split on, so find the vertex nearest the bus instead.
+  const splitIndex = (() => {
+    if (!selectedBus?.lat || !selectedBus?.lng || linePath.length < 2) return 0
+    if (linePath === polylineCoords) return nextStopIndex
+
+    let best = 0
+    let bestDist = Infinity
+    for (let i = 0; i < linePath.length; i++) {
+      const dLat = linePath[i].latitude - selectedBus.lat
+      const dLng = linePath[i].longitude - selectedBus.lng
+      const d = dLat * dLat + dLng * dLng // squared degrees is fine for ordering
+      if (d < bestDist) {
+        bestDist = d
+        best = i
+      }
+    }
+    return best
+  })()
+
+  const travelledCoords = linePath.slice(0, splitIndex + 1)
+  const upcomingCoords = linePath.slice(splitIndex)
 
   // Label the network the user is actually looking at rather than assuming one.
   const focusPoint = selectedBus
@@ -188,10 +235,10 @@ export default function HomeMapScreen({ navigation }: any) {
       >
         {/* Route geometry: a dark casing under a coloured core, so the line
             stays legible over both pale roads and dark satellite imagery. */}
-        {polylineCoords.length > 1 && (
+        {linePath.length > 1 && (
           <>
             <Polyline
-              coordinates={polylineCoords}
+              coordinates={linePath}
               strokeColor="rgba(15,23,42,0.35)"
               strokeWidth={9}
               lineCap="round"
