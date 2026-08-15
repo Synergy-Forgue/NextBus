@@ -4,7 +4,7 @@ import { Server } from 'http';
 import { pool } from '../db/pool';
 import { TelemetryPayload, LiveBusState, RouteStop } from '../types';
 import { updateBusState, getAllBusStates, getBusState, removeBusState } from './liveState';
-import { getRouteStopsForTrip, calculateStopEtas, deriveVehicleStatus } from './eta.service';
+import { getRouteStopsForTrip, calculateStopEtas, deriveVehicleStatus, roadFactorFor } from './eta.service';
 import { haversineKm } from '../utils/haversine';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -18,6 +18,30 @@ const subscribers = new Map<WebSocket, number | 'all'>(); // client → route_id
 // ─── Route Stops Cache ────────────────────────────────────────────────────────
 // Loaded from DB once per route_id. Avoids a DB query on every telemetry tick.
 const routeStopsCache = new Map<number, RouteStop[]>();
+
+// ─── Road Factor Cache ────────────────────────────────────────────────────────
+// How much longer a route's real road path is than a straight line through its
+// stops. Static per route, so it is read from route_geometry once and reused.
+const roadFactorCache = new Map<number, number>();
+
+async function getRoadFactor(route_id: number, stops: RouteStop[]): Promise<number> {
+  const cached = roadFactorCache.get(route_id);
+  if (cached !== undefined) return cached;
+
+  let factor = 1;
+  try {
+    const result = await pool.query(
+      `SELECT distance_m FROM route_geometry WHERE route_id = $1`,
+      [route_id]
+    );
+    factor = roadFactorFor(stops, result.rows[0]?.distance_m);
+  } catch {
+    factor = 1; // table may not exist yet on an un-migrated database
+  }
+
+  roadFactorCache.set(route_id, factor);
+  return factor;
+}
 
 async function getCachedRouteStops(trip_id: number): Promise<RouteStop[]> {
   // First check if we already have this trip's stops cached
@@ -111,7 +135,8 @@ async function broadcastUpdate(state: LiveBusState, stops: RouteStop[]): Promise
     state.nextStopIndex,
     state.latitude,
     state.longitude,
-    state.speed
+    state.speed,
+    await getRoadFactor(state.route_id, stops)
   );
 
   const nextStop = stops[state.nextStopIndex];
@@ -232,7 +257,8 @@ export function attachWebSocketServer(httpServer: Server): void {
           nextStopIndex,
           latitude,
           longitude,
-          speed ?? 0
+          speed ?? 0,
+          await getRoadFactor(meta.route_id, stops)
         );
 
         // Build the live state object
@@ -351,7 +377,8 @@ export async function getFleetWithEtas(routeFilter: number | 'all' = 'all'): Pro
         ?? await getRouteStopsForTrip(state.trip_id);
       const stop_etas = calculateStopEtas(
         stops, state.nextStopIndex,
-        state.latitude, state.longitude, state.speed
+        state.latitude, state.longitude, state.speed,
+        await getRoadFactor(state.route_id, stops)
       );
       const nextStop = stops[state.nextStopIndex];
       const distToNextStop = nextStop

@@ -80,12 +80,21 @@ export default function HomeDashboardScreen({ navigation }: any) {
     .slice(0, 4)
 
   const handlePickPress = (bus: any) => {
+    // Defaults here used to send every bus to Route 1's stops with Vizag
+    // endpoint names, so tapping a Mysuru bus opened a Visakhapatnam route.
+    // Without a real route id there is nothing meaningful to show.
+    if (!bus?.route_id) {
+      setSelectedBus(bus)
+      navigation.navigate('Map')
+      return
+    }
+
     const routeObj = {
-      id: bus.route_id || 1,
-      route_number: bus.routeNo || '10K',
-      route_name: `Route ${bus.routeNo || '10K'}`,
-      start_stop: bus.current_stop_name || 'RTC Complex',
-      end_stop: bus.next_stop_name || 'Kailasagiri',
+      id: bus.route_id,
+      route_number: bus.routeNo,
+      route_name: bus.routeNo ? `Route ${bus.routeNo}` : 'Route',
+      start_stop: bus.current_stop_name ?? undefined,
+      end_stop: bus.next_stop_name ?? undefined,
     }
     setSelectedRoute(routeObj)
     setSelectedBus(bus)
@@ -187,7 +196,7 @@ export default function HomeDashboardScreen({ navigation }: any) {
                 </View>
                 <Text style={styles.pickPlate}>{bus.licensePlate || bus.busId || 'Live bus'}</Text>
                 <Text style={styles.pickSub}>
-                  {bus.speed || 25} km/h · live tracking
+                  {bus.speed != null ? `${bus.speed} km/h` : 'Speed unknown'} · live tracking
                 </Text>
                 <Text style={[styles.pickCrowd, { color: crowd.color }]}>
                   {crowd.text}

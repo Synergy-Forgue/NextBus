@@ -153,6 +153,33 @@ async function loadStopsForRoute(route_id: number): Promise<StopInfo[]> {
   return FALLBACK_STOPS[route_id] || FALLBACK_STOPS[1];
 }
 
+/**
+ * Road geometry for a route, as [[lng, lat], ...]. Returns null when the route
+ * has none stored — the agent then drives straight lines between stops, which
+ * is visibly wrong but better than not moving at all.
+ */
+async function loadGeometryForRoute(route_id: number): Promise<[number, number][] | null> {
+  try {
+    const res = await fetch(`${HTTP_URL}/api/routes/${route_id}/geometry`);
+    if (res.ok) {
+      const data = (await res.json()) as any;
+      const coords = data?.coordinates;
+      if (Array.isArray(coords) && coords.length > 1) return coords as [number, number][];
+    }
+  } catch {}
+
+  try {
+    const result = await pool.query(
+      `SELECT coordinates FROM route_geometry WHERE route_id = $1`,
+      [route_id]
+    );
+    const coords = result.rows[0]?.coordinates;
+    if (Array.isArray(coords) && coords.length > 1) return coords as [number, number][];
+  } catch {}
+
+  return null;
+}
+
 function connectWs(): Promise<WebSocket> {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(WS_URL);
@@ -233,9 +260,13 @@ async function main(): Promise<void> {
   // Agents are built once and reused across reconnects. They start with no
   // socket and simply drop ticks until maintainConnection() hands them one.
   const agents: BusAgent[] = [];
+  let onRoads = 0;
   for (const trip of trips) {
     const stops = await loadStopsForRoute(trip.route_id);
     if (stops.length < 2) continue;
+
+    const geometry = await loadGeometryForRoute(trip.route_id);
+    if (geometry) onRoads++;
 
     agents.push(
       new BusAgent({
@@ -243,11 +274,19 @@ async function main(): Promise<void> {
         license_plate: trip.license_plate,
         capacity:      trip.capacity,
         stops,
+        geometry,
         ws:            null,
         intervalMs:    TICK_MS,
       })
     );
   }
+
+  console.log(
+    `\n🛣️  ${onRoads}/${agents.length} bus(es) following real road geometry` +
+      (onRoads < agents.length
+        ? ` — the rest fall back to straight lines. Run "npm run fetch-geometry" to fill the gaps.`
+        : '')
+  );
 
   process.on('SIGINT', () => {
     console.log('\n\n⛔ Shutting down simulator...');

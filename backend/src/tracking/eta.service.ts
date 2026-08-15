@@ -1,6 +1,6 @@
 import { pool } from '../db/pool';
 import { RouteStop, StopEta, VehicleStatus } from '../types';
-import { etaSeconds } from '../utils/haversine';
+import { etaSeconds, haversineKm } from '../utils/haversine';
 
 export { StopEta };
 
@@ -68,9 +68,16 @@ export function calculateStopEtas(
   nextStopIndex: number,
   busLat:        number,
   busLon:        number,
-  speedKmh:      number
+  speedKmh:      number,
+  roadFactor:    number = 1
 ): StopEta[] {
   if (!stops.length) return [];
+
+  // Straight-line distance between stops always understates the driving
+  // distance, so raw ETAs promised arrivals sooner than any bus could manage.
+  // roadFactor is the route's stored road distance divided by the straight-line
+  // chain through its stops; 1 leaves behaviour unchanged when unknown.
+  const factor = Number.isFinite(roadFactor) && roadFactor > 0 ? roadFactor : 1;
 
   let cumulativeSecs = 0;
 
@@ -82,13 +89,38 @@ export function calculateStopEtas(
 
     if (i === nextStopIndex) {
       // ETA from bus's current position to the next stop
-      cumulativeSecs = etaSeconds(busLat, busLon, stop.latitude, stop.longitude, speedKmh);
+      cumulativeSecs = etaSeconds(busLat, busLon, stop.latitude, stop.longitude, speedKmh) * factor;
     } else {
       // ETA from the previous stop to this stop (cumulative)
       const prev = stops[i - 1];
-      cumulativeSecs += etaSeconds(prev.latitude, prev.longitude, stop.latitude, stop.longitude, speedKmh);
+      cumulativeSecs +=
+        etaSeconds(prev.latitude, prev.longitude, stop.latitude, stop.longitude, speedKmh) * factor;
     }
 
-    return { ...stop, eta_seconds: cumulativeSecs };
+    return { ...stop, eta_seconds: Math.round(cumulativeSecs) };
   });
+}
+
+/**
+ * How much longer the real road is than a straight line through the stops.
+ *
+ * Computed once per route from stored geometry. Returns 1 when geometry is
+ * missing, which leaves ETAs exactly as they were rather than guessing.
+ */
+export function roadFactorFor(stops: RouteStop[], roadDistanceM?: number | null): number {
+  if (!roadDistanceM || !Number.isFinite(roadDistanceM) || stops.length < 2) return 1;
+
+  let straight = 0;
+  for (let i = 1; i < stops.length; i++) {
+    straight += haversineKm(
+      stops[i - 1].latitude, stops[i - 1].longitude,
+      stops[i].latitude,     stops[i].longitude
+    ) * 1000;
+  }
+
+  if (straight <= 0) return 1;
+
+  // Clamp: a factor below 1 means the geometry disagrees with the stops, and
+  // anything above 2 suggests bad data rather than a winding road.
+  return Math.min(2, Math.max(1, roadDistanceM / straight));
 }

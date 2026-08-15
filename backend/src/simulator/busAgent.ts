@@ -1,6 +1,6 @@
 import WebSocket from 'ws';
 import { TelemetryPayload } from '../types';
-import { generateWaypoints }  from './physics';
+import { generateWaypoints, generateWaypointsAlongPath }  from './physics';
 import { simulateOccupancy, simulateConfidence } from './occupancy';
 
 export interface StopInfo {
@@ -16,6 +16,12 @@ export interface BusAgentConfig {
   license_plate: string;
   capacity:     number;
   stops:        StopInfo[];
+  /**
+   * Road geometry for the route as [[lng, lat], ...], from route_geometry.
+   * When present the bus drives along the real road path; without it, it falls
+   * back to straight lines between stops and visibly cuts corners.
+   */
+  geometry?:    [number, number][] | null;
   /** Null while the publisher socket is down; ticks are dropped until it returns. */
   ws:           WebSocket | null;
   intervalMs:   number; // how often to emit a telemetry tick (e.g. 2000ms)
@@ -54,6 +60,42 @@ export class BusAgent {
    */
   setSocket(ws: WebSocket): void {
     this.cfg.ws = ws;
+  }
+
+  /** Index of the geometry vertex closest to a coordinate. */
+  private nearestVertex(lat: number, lon: number): number {
+    const path = this.cfg.geometry!;
+    let best = 0;
+    let bestDist = Infinity;
+    for (let i = 0; i < path.length; i++) {
+      const dLon = path[i][0] - lon;
+      const dLat = path[i][1] - lat;
+      const d = dLat * dLat + dLon * dLon; // squared degrees suffices for ordering
+      if (d < bestDist) {
+        bestDist = d;
+        best = i;
+      }
+    }
+    return best;
+  }
+
+  /**
+   * The slice of route geometry between two consecutive stops, oriented in the
+   * direction of travel. Returns null when there is no usable geometry, so the
+   * caller falls back to a straight line.
+   */
+  private legGeometry(from: StopInfo, to: StopInfo): [number, number][] | null {
+    const path = this.cfg.geometry;
+    if (!path || path.length < 2) return null;
+
+    const a = this.nearestVertex(from.latitude, from.longitude);
+    const b = this.nearestVertex(to.latitude, to.longitude);
+    if (a === b) return null;
+
+    // Geometry is stored in forward order; on the return leg the slice runs
+    // backwards and has to be reversed.
+    const slice = a < b ? path.slice(a, b + 1) : path.slice(b, a + 1).reverse();
+    return slice.length >= 2 ? (slice as [number, number][]) : null;
   }
 
   /** Start the simulation loop */
@@ -102,11 +144,16 @@ export class BusAgent {
           await sleep(dwellMs);
 
           // ── Drive to next stop ───────────────────────────────────────────
-          const waypoints = generateWaypoints(
-            fromStop.latitude, fromStop.longitude,
-            toStop.latitude,   toStop.longitude,
-            20
-          );
+          // Follow the real road path for this leg when geometry is available,
+          // so the bus stays on the line the apps draw.
+          const legPath = this.legGeometry(fromStop, toStop);
+          const waypoints = legPath
+            ? generateWaypointsAlongPath(legPath, 20)
+            : generateWaypoints(
+                fromStop.latitude, fromStop.longitude,
+                toStop.latitude,   toStop.longitude,
+                20
+              );
 
           for (const wp of waypoints) {
             if (!this.running) return;
