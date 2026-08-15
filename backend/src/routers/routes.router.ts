@@ -54,17 +54,33 @@ router.get('/search', async (req: Request, res: Response, next: NextFunction) =>
       const toTerm = `%${to}%`;
 
       if (from && to) {
+        // A route is stored as one ordered stop list, but buses run it as a
+        // round trip — the simulator drives forward then reverse, and real
+        // services do the same. Requiring rs_from.stop_order < rs_to.stop_order
+        // matched only the outbound direction, so every return journey came
+        // back "no routes found" even though a bus serves it.
+        //
+        // Both directions now match, and `direction` says which one applies.
+        // DISTINCT ON keeps one row per route, preferring outbound when a route
+        // happens to satisfy both.
         const result = await pool.query<Route>(
-          `SELECT DISTINCT r.id, r.route_number, r.route_name, r.start_stop, r.end_stop, r.created_at
-           FROM routes r
-           JOIN route_stops rs_from ON rs_from.route_id = r.id
-           JOIN stops s_from ON s_from.id = rs_from.stop_id
-           JOIN route_stops rs_to ON rs_to.route_id = r.id
-           JOIN stops s_to ON s_to.id = rs_to.stop_id
-           WHERE (s_from.name ILIKE $1 OR r.start_stop ILIKE $1)
-             AND (s_to.name ILIKE $2 OR r.end_stop ILIKE $2)
-             AND rs_from.stop_order < rs_to.stop_order
-           ORDER BY r.route_number`,
+          `SELECT id, route_number, route_name, start_stop, end_stop, created_at, direction
+             FROM (
+               SELECT DISTINCT ON (r.id)
+                      r.id, r.route_number, r.route_name, r.start_stop, r.end_stop, r.created_at,
+                      CASE WHEN rs_from.stop_order < rs_to.stop_order
+                           THEN 'forward' ELSE 'reverse' END AS direction
+                 FROM routes r
+                 JOIN route_stops rs_from ON rs_from.route_id = r.id
+                 JOIN stops s_from ON s_from.id = rs_from.stop_id
+                 JOIN route_stops rs_to ON rs_to.route_id = r.id
+                 JOIN stops s_to ON s_to.id = rs_to.stop_id
+                WHERE (s_from.name ILIKE $1 OR r.start_stop ILIKE $1)
+                  AND (s_to.name ILIKE $2 OR r.end_stop ILIKE $2)
+                  AND rs_from.stop_order <> rs_to.stop_order
+                ORDER BY r.id, (rs_from.stop_order < rs_to.stop_order) DESC
+             ) matches
+            ORDER BY route_number`,
           [fromTerm, toTerm]
         );
         res.json(result.rows);

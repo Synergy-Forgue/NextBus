@@ -291,6 +291,11 @@ export default function SearchRoutesScreen({ navigation }: any) {
                 <Text style={styles.resultStops}>
                   {r.route.start_stop} ➔ {r.route.end_stop}
                 </Text>
+                {/* Routes are stored one way but run as round trips; say so
+                    rather than showing a stop order that reads backwards. */}
+                {r.route.direction === 'reverse' && (
+                  <Text style={styles.returnTag}>↩ Return direction</Text>
+                )}
                 <View style={styles.resultFooter}>
                   <Text style={[styles.crowdText, { color: crowd.color }]}>
                     👥 {crowd.text} ({r.crowd}%)
@@ -492,6 +497,12 @@ const styles = StyleSheet.create({
     color: BRAND.textSecondary,
     marginTop: 2,
     marginBottom: 8,
+  },
+  returnTag: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: BRAND.warning,
+    marginBottom: 6,
   },
   resultFooter: {
     flexDirection: 'row',

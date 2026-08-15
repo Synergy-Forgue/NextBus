@@ -1,24 +1,34 @@
-import React, { useEffect, useRef } from 'react'
-import { View, Text, StyleSheet, Platform } from 'react-native'
+import React, { useEffect, useRef, useState } from 'react'
+import { View, Text, StyleSheet, Animated, Easing } from 'react-native'
 import { MarkerAnimated, AnimatedRegion } from 'react-native-maps'
 import { BRAND } from '../styles/brand'
 import type { BusPosition } from '../store/useCommuterStore'
 
 /**
- * A bus marker that glides between telemetry updates.
+ * A bus marker that glides between telemetry updates and faces its direction
+ * of travel.
  *
- * Plain <Marker coordinate={...}> re-mounts at the new coordinate on every
- * WebSocket frame, so buses teleported roughly once per two seconds. This
- * interpolates position with AnimatedRegion over the expected gap between
- * frames, which reads as continuous movement.
+ * Three things make this read as movement rather than teleporting:
  *
- * `tracksViewChanges` is switched off shortly after mount: with a custom marker
- * view, leaving it on makes Android re-rasterise the marker on every render,
- * which both flickers and drags framerate down with several buses on screen.
+ * 1. Position is interpolated with AnimatedRegion. A plain <Marker coordinate>
+ *    re-mounts at each new coordinate, so buses jumped once per update.
+ * 2. The animation duration tracks the *observed* gap between updates. The
+ *    simulator ticks every 2s but a real driver phone reports every ~10s; a
+ *    fixed duration would finish early and leave the bus parked until the next
+ *    frame, which is exactly the stutter a fixed 2s value produced.
+ * 3. A heading arrow rotates to the bearing between consecutive positions, so
+ *    the marker points where the bus is going. Only the arrow rotates — turning
+ *    the whole badge would stand the route number on its head.
+ *
+ * `tracksViewChanges` is disabled once the marker settles: with a custom view,
+ * leaving it on makes Android re-rasterise every render, which flickers and
+ * costs framerate with several buses on screen.
  */
 
-/** Matches the simulator's tick and the driver app's publish interval. */
-const ANIMATION_MS = 2000
+/** Clamps for the adaptive duration, so one late frame cannot freeze a bus. */
+const MIN_ANIM_MS = 900
+const MAX_ANIM_MS = 12000
+const DEFAULT_ANIM_MS = 2000
 
 interface Props {
   bus: BusPosition
@@ -43,6 +53,18 @@ function statusColor(status?: string): string {
   }
 }
 
+/** Initial bearing from one coordinate to another, in degrees clockwise from north. */
+function bearingBetween(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const toRad = (d: number) => (d * Math.PI) / 180
+  const φ1 = toRad(lat1)
+  const φ2 = toRad(lat2)
+  const Δλ = toRad(lon2 - lon1)
+
+  const y = Math.sin(Δλ) * Math.cos(φ2)
+  const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ)
+  return (Math.atan2(y, x) * 180) / Math.PI
+}
+
 export default function AnimatedBusMarker({ bus, isSelected = false, onPress }: Props) {
   const coordinate = useRef(
     new AnimatedRegion({
@@ -53,15 +75,23 @@ export default function AnimatedBusMarker({ bus, isSelected = false, onPress }: 
     })
   ).current
 
-  // Redraw the marker bitmap only while it is settling, then freeze it.
-  const [tracksChanges, setTracksChanges] = React.useState(true)
+  const prevPos = useRef({ lat: bus.lat, lng: bus.lng })
+  const lastUpdateAt = useRef<number>(Date.now())
+  const animMs = useRef<number>(DEFAULT_ANIM_MS)
+
+  // Heading is animated too, so turns sweep rather than snap.
+  const heading = useRef(new Animated.Value(0)).current
+  const headingDeg = useRef(0)
+
+  const [tracksChanges, setTracksChanges] = useState(true)
+  const [isMoving, setIsMoving] = useState(false)
+
   useEffect(() => {
     const t = setTimeout(() => setTracksChanges(false), 1200)
     return () => clearTimeout(t)
   }, [])
 
-  // Re-enable briefly when the visual state actually changes, so the new
-  // colour/scale is rasterised, then freeze again.
+  // Re-enable rasterising briefly when the visual state changes, then freeze.
   useEffect(() => {
     setTracksChanges(true)
     const t = setTimeout(() => setTracksChanges(false), 600)
@@ -71,17 +101,57 @@ export default function AnimatedBusMarker({ bus, isSelected = false, onPress }: 
   useEffect(() => {
     if (!Number.isFinite(bus.lat) || !Number.isFinite(bus.lng)) return
 
-    const next = { latitude: bus.lat, longitude: bus.lng }
+    const now = Date.now()
+    const observedGap = now - lastUpdateAt.current
+    lastUpdateAt.current = now
 
-    if (Platform.OS === 'android') {
-      // On Android the marker itself is animated natively.
-      coordinate.timing({ ...next, duration: ANIMATION_MS, useNativeDriver: false } as any).start()
-    } else {
-      coordinate.timing({ ...next, duration: ANIMATION_MS, useNativeDriver: false } as any).start()
+    // Ignore the first frame and absurd gaps (app backgrounded, socket resumed).
+    if (observedGap > 200 && observedGap < MAX_ANIM_MS * 2) {
+      animMs.current = Math.min(MAX_ANIM_MS, Math.max(MIN_ANIM_MS, observedGap))
     }
-  }, [bus.lat, bus.lng, coordinate])
+
+    const from = prevPos.current
+    const moved = from.lat !== bus.lat || from.lng !== bus.lng
+
+    if (moved) {
+      // Prefer a heading the backend supplies; otherwise derive it from motion.
+      const raw =
+        typeof (bus as any).heading === 'number'
+          ? (bus as any).heading
+          : bearingBetween(from.lat, from.lng, bus.lat, bus.lng)
+
+      // Unwrap so a 350°→10° turn sweeps 20° forward, not 340° backward.
+      let delta = raw - (headingDeg.current % 360)
+      if (delta > 180) delta -= 360
+      if (delta < -180) delta += 360
+      headingDeg.current += delta
+
+      Animated.timing(heading, {
+        toValue: headingDeg.current,
+        duration: Math.min(600, animMs.current),
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }).start()
+    }
+
+    setIsMoving(moved && (bus.speed ?? 0) > 1)
+    prevPos.current = { lat: bus.lat, lng: bus.lng }
+
+    coordinate
+      .timing({
+        latitude: bus.lat,
+        longitude: bus.lng,
+        duration: animMs.current,
+        useNativeDriver: false,
+      } as any)
+      .start()
+  }, [bus.lat, bus.lng, bus.speed, coordinate, heading])
 
   const color = statusColor(bus.status)
+  const rotate = heading.interpolate({
+    inputRange: [-360, 360],
+    outputRange: ['-360deg', '360deg'],
+  })
 
   return (
     <MarkerAnimated
@@ -92,17 +162,20 @@ export default function AnimatedBusMarker({ bus, isSelected = false, onPress }: 
       tracksViewChanges={tracksChanges}
     >
       <View style={styles.wrap}>
+        {/* Direction arrow orbits the badge, pointing along the bearing. */}
+        {isMoving && (
+          <Animated.View style={[styles.headingRing, { transform: [{ rotate }] }]}>
+            <View style={[styles.headingArrow, { borderBottomColor: color }]} />
+          </Animated.View>
+        )}
+
         {isSelected && <View style={[styles.halo, { borderColor: color }]} />}
-        <View
-          style={[
-            styles.pill,
-            { borderColor: color },
-            isSelected && styles.pillSelected,
-          ]}
-        >
+
+        <View style={[styles.pill, { borderColor: color }, isSelected && styles.pillSelected]}>
           <Text style={styles.emoji}>🚌</Text>
           <Text style={[styles.label, isSelected && styles.labelSelected]}>{bus.routeNo}</Text>
         </View>
+
         <View style={[styles.statusDot, { backgroundColor: color }]} />
       </View>
     </MarkerAnimated>
@@ -110,10 +183,25 @@ export default function AnimatedBusMarker({ bus, isSelected = false, onPress }: 
 }
 
 const styles = StyleSheet.create({
-  wrap: { alignItems: 'center', justifyContent: 'center', width: 78, height: 48 },
+  wrap: { alignItems: 'center', justifyContent: 'center', width: 84, height: 60 },
+  headingRing: {
+    position: 'absolute',
+    width: 56,
+    height: 56,
+    alignItems: 'center',
+  },
+  headingArrow: {
+    width: 0,
+    height: 0,
+    borderLeftWidth: 5,
+    borderRightWidth: 5,
+    borderBottomWidth: 9,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+  },
   halo: {
     position: 'absolute',
-    width: 60,
+    width: 62,
     height: 40,
     borderRadius: 20,
     borderWidth: 2,
@@ -140,8 +228,8 @@ const styles = StyleSheet.create({
   labelSelected: { color: '#FFFFFF' },
   statusDot: {
     position: 'absolute',
-    bottom: 6,
-    right: 12,
+    bottom: 10,
+    right: 14,
     width: 9,
     height: 9,
     borderRadius: 5,
