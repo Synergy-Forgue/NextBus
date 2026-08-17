@@ -43,3 +43,7 @@ yarn-error.log*
 
 # Agent / editor tooling
 .claude/
+
+# Built APKs — 58MB binaries, rebuild from source instead
+APKs/
+*.apk

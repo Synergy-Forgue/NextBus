@@ -1,15 +1,10 @@
 import { Pool } from 'pg';
 import dotenv from 'dotenv';
+import { buildPoolConfig } from './config';
 
 dotenv.config();
 
-export const pool = new Pool({
-  host:     process.env.DB_HOST     || 'localhost',
-  port:     parseInt(process.env.DB_PORT || '5432'),
-  database: process.env.DB_NAME     || 'nxtbus',
-  user:     process.env.DB_USER     || 'postgres',
-  password: process.env.DB_PASSWORD || '',
-});
+export const pool = new Pool(buildPoolConfig());
 
 pool.on('error', (err) => {
   console.error('Unexpected PostgreSQL client error:', err);

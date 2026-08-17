@@ -14,6 +14,7 @@ dotenv.config();
 import WebSocket from 'ws';
 import { Pool }  from 'pg';
 import { BusAgent, StopInfo } from './busAgent';
+import { buildPoolConfig, describeTarget } from '../db/config';
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 const WS_URL   = process.env.SIM_WS_URL   || 'ws://localhost:3000/ws/publish';
@@ -24,14 +25,13 @@ const HTTP_URL =
   WS_URL.replace(/^wss:/, 'https:').replace(/^ws:/, 'http:').replace(/\/ws\/publish$/, '');
 const TICK_MS  = parseInt(process.env.SIM_TICK_MS || '2000'); // 2s between GPS ticks
 
-// ─── Database Pool (optional fallback for local dev) ──────────────────────────
-const pool = new Pool({
-  host:     process.env.DB_HOST     || 'localhost',
-  port:     parseInt(process.env.DB_PORT || '5432'),
-  database: process.env.DB_NAME     || 'nxtbus',
-  user:     process.env.DB_USER     || 'postgres',
-  password: process.env.DB_PASSWORD || '',
-});
+// ─── Database Pool ────────────────────────────────────────────────────────────
+// Honours DATABASE_URL so a laptop run reaches the deployed database. See
+// db/config.ts for why the discrete DB_* vars cannot do that.
+const pool = new Pool(buildPoolConfig());
+
+/** True once real trips are loaded, so we can warn when we are faking it. */
+let usingFallbackData = false;
 
 // ─── Static Offline Fallback Data ─────────────────────────────────────────────
 const FALLBACK_TRIPS = [
@@ -113,14 +113,33 @@ async function loadTrips() {
     }
   } catch {}
 
+  let dbError: string | null = null;
   try {
     const result = await pool.query(
       `SELECT t.id AS trip_id, t.route_id, b.license_plate, b.bus_number, b.capacity
        FROM trips t JOIN buses b ON b.id = t.bus_id WHERE t.status = 'active' ORDER BY t.id`
     );
     if (result.rows.length > 0) return result.rows;
-  } catch {}
+  } catch (err) {
+    dbError = err instanceof Error ? err.message : String(err);
+  }
 
+  // Reaching here means neither the API nor the database answered. The old code
+  // returned this hardcoded list silently, which is the worst possible outcome:
+  // the simulator looks healthy while publishing five invented Vizag buses with
+  // no road geometry. Say so loudly instead.
+  usingFallbackData = true;
+  console.warn('');
+  console.warn('⚠️  Could not load trips from the API or the database.');
+  console.warn(`    API : ${HTTP_URL}`);
+  console.warn(`    DB  : ${describeTarget()}`);
+  if (dbError) console.warn(`    DB error: ${dbError}`);
+  console.warn('');
+  console.warn('    Falling back to 5 hardcoded Vizag buses with straight-line');
+  console.warn('    routes. This is NOT your real network — do not demo it.');
+  console.warn('    Set DATABASE_URL to the public proxy URL (…proxy.rlwy.net)');
+  console.warn('    and SIM_WS_URL to your deployed backend.');
+  console.warn('');
   return FALLBACK_TRIPS;
 }
 
@@ -287,6 +306,12 @@ async function main(): Promise<void> {
         ? ` — the rest fall back to straight lines. Run "npm run fetch-geometry" to fill the gaps.`
         : '')
   );
+
+  // Repeat the warning here: the trip list scrolls past on startup, and this is
+  // the last thing printed before telemetry begins.
+  if (usingFallbackData) {
+    console.warn('🚨 Publishing HARDCODED fallback buses — not your real network.');
+  }
 
   process.on('SIGINT', () => {
     console.log('\n\n⛔ Shutting down simulator...');
