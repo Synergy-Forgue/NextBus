@@ -1,40 +1,55 @@
-import React, { useState } from 'react'
+import React, { useState } from 'react';
 import {
   View,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
   Alert,
-} from 'react-native'
-import { Text, Card, Button, Divider, RadioButton, Switch } from 'react-native-paper'
-import useCommuterStore from '../store/useCommuterStore'
-import { CONSTANTS } from '../utils/constants'
+} from 'react-native';
+import { Text, Card, Button, Divider, RadioButton, Switch } from 'react-native-paper';
+import useCommuterStore, { AlertItem } from '../store/useCommuterStore';
+import { CONSTANTS } from '../utils/constants';
+import { BRAND } from '../styles/brand';
 
 export default function SetAlertScreen({ route, navigation }: any) {
-  const { params } = route
-  const bus = params?.bus || {}
-  const { addAlert } = useCommuterStore()
+  const { params } = route;
+  const bus = params?.bus || {};
+  const { addAlert } = useCommuterStore();
 
-  const [alertMode, setAlertMode] = useState<'ai' | 'custom'>('ai')
-  const [customMinutes, setCustomMinutes] = useState(10)
-  const [notifyBoard, setNotifyBoard] = useState(true)
-  const [notifyAlight, setNotifyAlight] = useState(true)
-  const [soundEnabled, setSoundEnabled] = useState(true)
-  const [vibrationEnabled, setVibrationEnabled] = useState(true)
+  const [alertMode, setAlertMode] = useState<'ai' | 'custom'>('ai');
+  const [customMinutes, setCustomMinutes] = useState(10);
+  const [notifyBoard, setNotifyBoard] = useState(true);
+  const [notifyAlight, setNotifyAlight] = useState(true);
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [vibrationEnabled, setVibrationEnabled] = useState(true);
+
+  const routeNo = bus.routeNo || bus.route_number || '10K';
+  const routeName = bus.route_name || `Route ${routeNo}`;
+  const origin = bus.source || bus.start_stop || 'Start Stop';
+  const destination = bus.destination || bus.end_stop || 'Destination';
 
   const handleSetAlert = () => {
-    const alertData = {
+    const alertData: AlertItem = {
       id: `alert_${Date.now()}`,
       busId: String(bus.busId || bus.id || '1'),
-      stopId: String(bus.stopId || '1'),
+      route_number: String(routeNo),
+      route_name: routeName,
+      stop_name: destination,
       thresholdMinutes: customMinutes,
-    }
+      mode: alertMode,
+      paused: false,
+      description:
+        alertMode === 'ai'
+          ? `AI-Proactive walk-time reminder for Route ${routeNo}`
+          : `Notify when bus is ${customMinutes} mins away from ${destination}`,
+      created_at: new Date().toISOString(),
+    };
 
-    addAlert(alertData)
+    addAlert(alertData);
 
     Alert.alert(
-      'Alert Set',
-      `${alertMode === 'ai' ? 'AI-Proactive' : 'Custom'} alert set for Route ${bus.routeNo || '5A'}`,
+      '🔔 Alert Scheduled',
+      `${alertMode === 'ai' ? 'AI-Proactive' : 'Custom'} alert configured for Route ${routeNo}.`,
       [
         {
           text: 'View Active Alerts',
@@ -45,20 +60,22 @@ export default function SetAlertScreen({ route, navigation }: any) {
           onPress: () => navigation.goBack(),
         },
       ],
-    )
-  }
+    );
+  };
 
   return (
     <View style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content}>
-        {/* Route Info */}
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Route Info Card */}
         <Card style={styles.routeCard}>
           <Card.Content>
-            <Text style={styles.cardTitle}>Setting Alert For</Text>
-            <View style={styles.routeInfo}>
-              <Text style={styles.routeNumber}>{bus.routeNo || '5A'}</Text>
+            <Text style={styles.cardHeaderSmall}>SETTING TRANSIT ALERT FOR</Text>
+            <View style={styles.routeHeader}>
+              <View style={styles.routeBadge}>
+                <Text style={styles.routeBadgeText}>Route {routeNo}</Text>
+              </View>
               <Text style={styles.routeDetails}>
-                {bus.source || 'Central Station'} → {bus.destination || 'Airport'}
+                {origin} ➔ {destination}
               </Text>
             </View>
           </Card.Content>
@@ -66,74 +83,76 @@ export default function SetAlertScreen({ route, navigation }: any) {
 
         {/* Alert Mode Selection */}
         <Card style={styles.modeCard}>
-          <Card.Title title="Alert Mode" titleStyle={styles.cardTitle} />
+          <Card.Title title="Select Alert Mode" titleStyle={styles.cardTitle} />
           <Divider />
-          <Card.Content>
+          <Card.Content style={{ paddingTop: 8 }}>
             {/* AI-Proactive Mode */}
             <TouchableOpacity
-              style={styles.modeOption}
+              style={[styles.modeOption, alertMode === 'ai' && styles.modeOptionActive]}
               onPress={() => setAlertMode('ai')}
+              activeOpacity={0.85}
             >
               <RadioButton
                 value="ai"
                 status={alertMode === 'ai' ? 'checked' : 'unchecked'}
                 onPress={() => setAlertMode('ai')}
-                color={CONSTANTS.Colors.primary}
+                color={BRAND.primary}
               />
               <View style={styles.modeContent}>
                 <Text style={styles.modeName}>AI-Proactive (Recommended)</Text>
                 <Text style={styles.modeDesc}>
-                  We'll notify you exactly when to leave based on your location and bus ETA. Best
-                  for not missing your bus.
+                  Calculates your live walking time to the nearest stop against the bus's real-time ETA and tells you exactly when to leave.
                 </Text>
               </View>
             </TouchableOpacity>
 
-            <Divider style={styles.divider} />
-
             {/* Custom Alarm Mode */}
             <TouchableOpacity
-              style={styles.modeOption}
+              style={[styles.modeOption, alertMode === 'custom' && styles.modeOptionActive]}
               onPress={() => setAlertMode('custom')}
+              activeOpacity={0.85}
             >
               <RadioButton
                 value="custom"
                 status={alertMode === 'custom' ? 'checked' : 'unchecked'}
                 onPress={() => setAlertMode('custom')}
-                color={CONSTANTS.Colors.primary}
+                color={BRAND.primary}
               />
               <View style={styles.modeContent}>
-                <Text style={styles.modeName}>Custom Alarm</Text>
+                <Text style={styles.modeName}>Custom Threshold Alarm</Text>
                 <Text style={styles.modeDesc}>
-                  Get notified when the bus is X minutes away from your stop.
+                  Trigger an audible/vibrating alert when the bus is within X minutes of your boarding stop.
                 </Text>
               </View>
             </TouchableOpacity>
           </Card.Content>
         </Card>
 
-        {/* Custom Settings */}
+        {/* Custom Settings (if custom mode chosen) */}
         {alertMode === 'custom' && (
           <Card style={styles.settingsCard}>
-            <Card.Title title="Custom Settings" titleStyle={styles.cardTitle} />
+            <Card.Title title="Arrival Threshold" titleStyle={styles.cardTitle} />
             <Divider />
             <Card.Content>
               <Text style={styles.sliderLabel}>
-                Notify when bus is {customMinutes} minutes away
+                Notify me when bus is <Text style={{ color: BRAND.primary, fontWeight: '800' }}>{customMinutes} minutes</Text> away
               </Text>
-              <View style={{ flexDirection: 'row', gap: 8, marginVertical: 8, justifyContent: 'space-between' }}>
+              <View style={styles.minuteChipsRow}>
                 {[5, 10, 15, 20, 30].map((mins) => (
                   <TouchableOpacity
                     key={mins}
                     onPress={() => setCustomMinutes(mins)}
-                    style={{
-                      paddingHorizontal: 14,
-                      paddingVertical: 10,
-                      borderRadius: 8,
-                      backgroundColor: customMinutes === mins ? CONSTANTS.Colors.primary : '#F0F0F0',
-                    }}
+                    style={[
+                      styles.minuteChip,
+                      customMinutes === mins && styles.minuteChipActive,
+                    ]}
                   >
-                    <Text style={{ color: customMinutes === mins ? '#FFF' : '#333', fontWeight: '700' }}>
+                    <Text
+                      style={[
+                        styles.minuteChipText,
+                        customMinutes === mins && styles.minuteChipTextActive,
+                      ]}
+                    >
                       {mins}m
                     </Text>
                   </TouchableOpacity>
@@ -145,18 +164,18 @@ export default function SetAlertScreen({ route, navigation }: any) {
 
         {/* Stop Notifications */}
         <Card style={styles.settingsCard}>
-          <Card.Title title="Stop Notifications" titleStyle={styles.cardTitle} />
+          <Card.Title title="Journey Notifications" titleStyle={styles.cardTitle} />
           <Divider />
           <Card.Content>
             <View style={styles.settingRow}>
               <View style={styles.settingLabel}>
                 <Text style={styles.settingTitle}>Notify on Boarding</Text>
-                <Text style={styles.settingDesc}>Alert when you board the bus</Text>
+                <Text style={styles.settingDesc}>Confirm when you board the bus</Text>
               </View>
               <Switch
                 value={notifyBoard}
                 onValueChange={setNotifyBoard}
-                color={CONSTANTS.Colors.primary}
+                color={BRAND.primary}
               />
             </View>
 
@@ -165,12 +184,12 @@ export default function SetAlertScreen({ route, navigation }: any) {
             <View style={styles.settingRow}>
               <View style={styles.settingLabel}>
                 <Text style={styles.settingTitle}>Notify on Alighting</Text>
-                <Text style={styles.settingDesc}>Alert when near your destination</Text>
+                <Text style={styles.settingDesc}>Alert 1 stop before your destination</Text>
               </View>
               <Switch
                 value={notifyAlight}
                 onValueChange={setNotifyAlight}
-                color={CONSTANTS.Colors.primary}
+                color={BRAND.primary}
               />
             </View>
           </Card.Content>
@@ -178,18 +197,18 @@ export default function SetAlertScreen({ route, navigation }: any) {
 
         {/* Notification Style */}
         <Card style={styles.settingsCard}>
-          <Card.Title title="Notification Style" titleStyle={styles.cardTitle} />
+          <Card.Title title="Notification Channels" titleStyle={styles.cardTitle} />
           <Divider />
           <Card.Content>
             <View style={styles.settingRow}>
               <View style={styles.settingLabel}>
                 <Text style={styles.settingTitle}>Sound</Text>
-                <Text style={styles.settingDesc}>Play notification sound</Text>
+                <Text style={styles.settingDesc}>Play alert tone</Text>
               </View>
               <Switch
                 value={soundEnabled}
                 onValueChange={setSoundEnabled}
-                color={CONSTANTS.Colors.primary}
+                color={BRAND.primary}
               />
             </View>
 
@@ -198,26 +217,14 @@ export default function SetAlertScreen({ route, navigation }: any) {
             <View style={styles.settingRow}>
               <View style={styles.settingLabel}>
                 <Text style={styles.settingTitle}>Vibration</Text>
-                <Text style={styles.settingDesc}>Vibrate on notification</Text>
+                <Text style={styles.settingDesc}>Haptic vibration on arrival</Text>
               </View>
               <Switch
                 value={vibrationEnabled}
                 onValueChange={setVibrationEnabled}
-                color={CONSTANTS.Colors.primary}
+                color={BRAND.primary}
               />
             </View>
-          </Card.Content>
-        </Card>
-
-        {/* Info Box */}
-        <Card style={styles.infoCard}>
-          <Card.Content>
-            <Text style={styles.infoTitle}>💡 Tips</Text>
-            <Text style={styles.infoText}>
-              • AI-Proactive mode works best when the app is open{'\n'}
-              • Custom Alarm can work in background with location permission{'\n'}
-              • Both modes stop once you board the bus
-            </Text>
           </Card.Content>
         </Card>
 
@@ -232,152 +239,168 @@ export default function SetAlertScreen({ route, navigation }: any) {
           </Button>
           <Button
             mode="contained"
-            buttonColor={CONSTANTS.Colors.primary}
+            buttonColor={BRAND.primary}
             style={styles.setButton}
             onPress={handleSetAlert}
           >
-            Set Alert
+            Schedule Alert
           </Button>
         </View>
       </ScrollView>
     </View>
-  )
+  );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5F5F5',
+    backgroundColor: BRAND.bg,
   },
   content: {
-    paddingHorizontal: 12,
-    paddingVertical: 12,
+    padding: 14,
     gap: 12,
-    paddingBottom: 20,
+    paddingBottom: 40,
   },
   routeCard: {
-    backgroundColor: '#fff',
+    backgroundColor: BRAND.surface,
+    borderRadius: BRAND.radius.lg,
+    ...BRAND.shadow,
   },
-  cardTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#333',
+  cardHeaderSmall: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+    color: BRAND.textTertiary,
+    marginBottom: 8,
   },
-  routeInfo: {
-    marginTop: 8,
+  routeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
-  routeNumber: {
-    fontSize: 28,
-    fontWeight: '900',
-    color: CONSTANTS.Colors.primary,
-    marginBottom: 4,
+  routeBadge: {
+    backgroundColor: BRAND.primary,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: BRAND.radius.pill,
+  },
+  routeBadgeText: {
+    color: '#FFF',
+    fontWeight: '800',
+    fontSize: 13,
   },
   routeDetails: {
     fontSize: 13,
-    color: '#666',
+    fontWeight: '700',
+    color: BRAND.text,
+    flex: 1,
+  },
+  cardTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: BRAND.text,
   },
   modeCard: {
-    backgroundColor: '#fff',
+    backgroundColor: BRAND.surface,
+    borderRadius: BRAND.radius.lg,
+    ...BRAND.shadow,
   },
   modeOption: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    paddingVertical: 14,
-    paddingHorizontal: 12,
-    gap: 12,
-    backgroundColor: '#F8F9FA',
-    borderRadius: 10,
+    padding: 12,
+    gap: 8,
+    backgroundColor: BRAND.surfaceMuted,
+    borderRadius: BRAND.radius.md,
     marginBottom: 8,
+    borderWidth: 1.5,
+    borderColor: 'transparent',
+  },
+  modeOptionActive: {
+    borderColor: BRAND.primary,
+    backgroundColor: '#EEF2FF',
   },
   modeContent: {
     flex: 1,
   },
   modeName: {
     fontSize: 14,
-    fontWeight: '700',
-    color: '#333',
-    marginBottom: 4,
+    fontWeight: '800',
+    color: BRAND.text,
+    marginBottom: 2,
   },
   modeDesc: {
     fontSize: 12,
-    color: '#666',
-    lineHeight: 16,
-    fontWeight: '500',
-  },
-  divider: {
-    marginVertical: 8,
+    color: BRAND.textSecondary,
+    lineHeight: 17,
   },
   settingsCard: {
-    backgroundColor: '#fff',
+    backgroundColor: BRAND.surface,
+    borderRadius: BRAND.radius.lg,
+    ...BRAND.shadow,
+  },
+  sliderLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: BRAND.text,
+    marginBottom: 10,
+  },
+  minuteChipsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  minuteChip: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderRadius: BRAND.radius.md,
+    backgroundColor: BRAND.surfaceMuted,
+  },
+  minuteChipActive: {
+    backgroundColor: BRAND.primary,
+  },
+  minuteChipText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: BRAND.text,
+  },
+  minuteChipTextActive: {
+    color: '#FFFFFF',
   },
   settingRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: 10,
   },
   settingLabel: {
     flex: 1,
+    marginRight: 10,
   },
   settingTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 4,
+    fontSize: 13,
+    fontWeight: '700',
+    color: BRAND.text,
   },
   settingDesc: {
-    fontSize: 12,
-    color: '#999',
-  },
-  sliderLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 12,
-  },
-  slider: {
-    width: '100%',
-    height: 40,
-  },
-  sliderLabels: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 4,
-  },
-  minLabel: {
     fontSize: 11,
-    color: '#999',
+    color: BRAND.textSecondary,
+    marginTop: 2,
   },
-  maxLabel: {
-    fontSize: 11,
-    color: '#999',
-  },
-  infoCard: {
-    backgroundColor: '#FFF9E6',
-    borderLeftWidth: 4,
-    borderLeftColor: '#FFB800',
-  },
-  infoTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 8,
-  },
-  infoText: {
-    fontSize: 12,
-    color: '#666',
-    lineHeight: 16,
+  divider: {
+    marginVertical: 4,
   },
   actionButtons: {
     flexDirection: 'row',
-    gap: 8,
-    marginBottom: 10,
+    gap: 10,
+    marginTop: 6,
   },
   cancelButton: {
     flex: 1,
-    borderColor: CONSTANTS.Colors.primary,
+    borderColor: BRAND.border,
   },
   setButton: {
-    flex: 1,
+    flex: 1.5,
   },
-})
+});

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Language } from '../services/languageService';
 
 export type VehicleStatus = 'LIVE' | 'APPROACHING STOP' | 'AT STOP' | 'STALE' | 'SIGNAL LOST' | 'OFFLINE';
 
@@ -42,18 +43,23 @@ export interface UserProfile {
   id?: string;
   phone: string;
   name: string;
-  language: string;
+  language: Language;
   avatar?: string;
 }
 
-export interface Alert {
+export interface AlertItem {
   id: string;
   busId?: string;
-  stopId?: string;
-  thresholdMinutes?: number;
-  type?: string;
-  description?: string;
   route_number?: string;
+  route_name?: string;
+  stopId?: string;
+  stop_name?: string;
+  thresholdMinutes?: number;
+  mode?: 'ai' | 'custom';
+  paused?: boolean;
+  type?: 'sos' | 'breakdown' | 'custom' | 'ai';
+  description?: string;
+  created_at?: string;
 }
 
 export interface RouteItem {
@@ -70,10 +76,12 @@ export interface RouteItem {
 }
 
 export interface TrustedContact {
-  id?: string;
+  id: string;
   name: string;
   phone: string;
+  relationship?: string;
   relation?: string;
+  isEmergency?: boolean;
   initial?: string;
   tag?: string;
   color?: string;
@@ -89,6 +97,8 @@ export interface BusPass {
   status: 'ACTIVE' | 'EXPIRED';
   qrCode: string;
 }
+
+export type SmartPickPreference = 'fastest' | 'least-crowded' | 'cheapest';
 
 interface CommuterStoreState {
   // Real-time Telemetry & Live Map
@@ -112,10 +122,13 @@ interface CommuterStoreState {
   activePass: BusPass | null;
 
   // Alerts & Notifications
-  activeAlerts: Alert[];
+  activeAlerts: AlertItem[];
   pushEnabled: boolean;
   smartAlertsEnabled: boolean;
   lateNightModeEnabled: boolean;
+
+  // Preferences
+  smartPickPreference: SmartPickPreference;
 
   // Persisted Lists
   savedRoutes: RouteItem[];
@@ -125,7 +138,7 @@ interface CommuterStoreState {
   // System UI
   isLoading: boolean;
   darkMode: boolean;
-  language: string;
+  language: Language;
   hasOnboarded: boolean;
 
   // Actions
@@ -147,33 +160,67 @@ interface CommuterStoreState {
   logoutCommuter: () => void;
   setPendingPhone: (phone: string | null) => void;
 
-  addAlert: (alert: Alert) => void;
+  addAlert: (alert: AlertItem) => void;
   removeAlert: (alertId: string) => void;
+  toggleAlertPause: (alertId: string) => void;
+  loadActiveAlerts: () => Promise<void>;
+
   setPushEnabled: (enabled: boolean) => void;
   setSmartAlertsEnabled: (enabled: boolean) => void;
   setLateNightMode: (enabled: boolean) => void;
+  setSmartPickPreference: (pref: SmartPickPreference) => void;
 
   setSavedRoutes: (routes: RouteItem[]) => void;
   addSavedRoute: (route: RouteItem) => void;
   removeSavedRoute: (routeId: number | string) => void;
   loadSavedRoutes: () => Promise<void>;
 
+  setTrustedContacts: (contacts: TrustedContact[]) => void;
   addTrustedContact: (contact: TrustedContact) => void;
-  removeTrustedContact: (phone: string) => void;
+  updateTrustedContact: (contactId: string, data: Partial<TrustedContact>) => void;
+  removeTrustedContact: (contactId: string) => void;
   loadTrustedContacts: () => Promise<void>;
 
   setSearchResults: (results: any[]) => void;
   setLoading: (isLoading: boolean) => void;
   setDarkMode: (darkMode: boolean) => void;
-  setLanguage: (lang: string) => void;
+  setLanguage: (lang: Language) => void;
   completeOnboarding: () => void;
+  loadInitialStorage: () => Promise<void>;
   clearAll: () => void;
 }
 
 const STORAGE_SAVED_ROUTES = '@nxtbus_saved_routes';
 const STORAGE_CONTACTS = '@nxtbus_trusted_contacts';
 const STORAGE_PROFILE = '@nxtbus_user_profile';
+const STORAGE_ALERTS = '@nxtbus_active_alerts';
 const STORAGE_PASS = '@nxtbus_active_pass';
+const STORAGE_SETTINGS = '@nxtbus_user_settings';
+
+const DEFAULT_CONTACTS: TrustedContact[] = [
+  {
+    id: 'contact_1',
+    name: 'Mom',
+    phone: '+91 98765 43210',
+    relationship: 'Mother',
+    relation: 'Mother',
+    isEmergency: true,
+    initial: 'M',
+    tag: 'Primary Contact',
+    color: '#7C3AED',
+  },
+  {
+    id: 'contact_2',
+    name: 'Dad',
+    phone: '+91 98765 43211',
+    relationship: 'Father',
+    relation: 'Father',
+    isEmergency: true,
+    initial: 'D',
+    tag: '+91 98765 43211',
+    color: '#4F46E5',
+  },
+];
 
 export const useCommuterStore = create<CommuterStoreState>((set, get) => ({
   // Initial State
@@ -192,13 +239,25 @@ export const useCommuterStore = create<CommuterStoreState>((set, get) => ({
 
   activePass: null,
 
-  activeAlerts: [],
+  activeAlerts: [
+    {
+      id: 'sub_10k',
+      route_number: '10K',
+      route_name: 'RTC Complex ↔ Kailasagiri',
+      thresholdMinutes: 10,
+      mode: 'ai',
+      paused: false,
+      description: 'Daily morning commute alert',
+      created_at: new Date().toISOString(),
+    },
+  ],
   pushEnabled: true,
   smartAlertsEnabled: true,
   lateNightModeEnabled: false,
+  smartPickPreference: 'fastest',
 
   savedRoutes: [],
-  trustedContacts: [],
+  trustedContacts: DEFAULT_CONTACTS,
   searchResults: [],
 
   isLoading: false,
@@ -294,18 +353,80 @@ export const useCommuterStore = create<CommuterStoreState>((set, get) => ({
   setPendingPhone: (phone) => set({ pendingPhone: phone }),
 
   addAlert: (alert) =>
-    set((state) => ({
-      activeAlerts: [...state.activeAlerts, alert],
-    })),
+    set((state) => {
+      const updated = [alert, ...state.activeAlerts.filter((a) => a.id !== alert.id)];
+      AsyncStorage.setItem(STORAGE_ALERTS, JSON.stringify(updated)).catch(() => {});
+      return { activeAlerts: updated };
+    }),
 
   removeAlert: (alertId) =>
-    set((state) => ({
-      activeAlerts: state.activeAlerts.filter((a) => a.id !== alertId),
-    })),
+    set((state) => {
+      const updated = state.activeAlerts.filter((a) => a.id !== alertId);
+      AsyncStorage.setItem(STORAGE_ALERTS, JSON.stringify(updated)).catch(() => {});
+      return { activeAlerts: updated };
+    }),
 
-  setPushEnabled: (enabled) => set({ pushEnabled: enabled }),
-  setSmartAlertsEnabled: (enabled) => set({ smartAlertsEnabled: enabled }),
+  toggleAlertPause: (alertId) =>
+    set((state) => {
+      const updated = state.activeAlerts.map((a) =>
+        a.id === alertId ? { ...a, paused: !a.paused } : a
+      );
+      AsyncStorage.setItem(STORAGE_ALERTS, JSON.stringify(updated)).catch(() => {});
+      return { activeAlerts: updated };
+    }),
+
+  loadActiveAlerts: async () => {
+    try {
+      const data = await AsyncStorage.getItem(STORAGE_ALERTS);
+      if (data) {
+        set({ activeAlerts: JSON.parse(data) });
+      }
+    } catch {}
+  },
+
+  setPushEnabled: (enabled) => {
+    set({ pushEnabled: enabled });
+    AsyncStorage.setItem(
+      STORAGE_SETTINGS,
+      JSON.stringify({
+        pushEnabled: enabled,
+        smartAlertsEnabled: get().smartAlertsEnabled,
+        darkMode: get().darkMode,
+        language: get().language,
+        smartPickPreference: get().smartPickPreference,
+      })
+    ).catch(() => {});
+  },
+
+  setSmartAlertsEnabled: (enabled) => {
+    set({ smartAlertsEnabled: enabled });
+    AsyncStorage.setItem(
+      STORAGE_SETTINGS,
+      JSON.stringify({
+        pushEnabled: get().pushEnabled,
+        smartAlertsEnabled: enabled,
+        darkMode: get().darkMode,
+        language: get().language,
+        smartPickPreference: get().smartPickPreference,
+      })
+    ).catch(() => {});
+  },
+
   setLateNightMode: (enabled) => set({ lateNightModeEnabled: enabled }),
+
+  setSmartPickPreference: (pref) => {
+    set({ smartPickPreference: pref });
+    AsyncStorage.setItem(
+      STORAGE_SETTINGS,
+      JSON.stringify({
+        pushEnabled: get().pushEnabled,
+        smartAlertsEnabled: get().smartAlertsEnabled,
+        darkMode: get().darkMode,
+        language: get().language,
+        smartPickPreference: pref,
+      })
+    ).catch(() => {});
+  },
 
   setSavedRoutes: (routes) => {
     set({ savedRoutes: routes });
@@ -336,6 +457,11 @@ export const useCommuterStore = create<CommuterStoreState>((set, get) => ({
     } catch {}
   },
 
+  setTrustedContacts: (contacts) => {
+    set({ trustedContacts: contacts });
+    AsyncStorage.setItem(STORAGE_CONTACTS, JSON.stringify(contacts)).catch(() => {});
+  },
+
   addTrustedContact: (contact) => {
     const current = get().trustedContacts;
     if (current.length >= 5) return;
@@ -344,8 +470,15 @@ export const useCommuterStore = create<CommuterStoreState>((set, get) => ({
     AsyncStorage.setItem(STORAGE_CONTACTS, JSON.stringify(updated)).catch(() => {});
   },
 
-  removeTrustedContact: (phone) => {
-    const updated = get().trustedContacts.filter((c) => c.phone !== phone);
+  updateTrustedContact: (contactId, data) => {
+    const current = get().trustedContacts;
+    const updated = current.map((c) => (c.id === contactId ? { ...c, ...data } : c));
+    set({ trustedContacts: updated });
+    AsyncStorage.setItem(STORAGE_CONTACTS, JSON.stringify(updated)).catch(() => {});
+  },
+
+  removeTrustedContact: (contactId) => {
+    const updated = get().trustedContacts.filter((c) => c.id !== contactId && c.phone !== contactId);
     set({ trustedContacts: updated });
     AsyncStorage.setItem(STORAGE_CONTACTS, JSON.stringify(updated)).catch(() => {});
   },
@@ -355,15 +488,79 @@ export const useCommuterStore = create<CommuterStoreState>((set, get) => ({
       const data = await AsyncStorage.getItem(STORAGE_CONTACTS);
       if (data) {
         set({ trustedContacts: JSON.parse(data) });
+      } else {
+        set({ trustedContacts: DEFAULT_CONTACTS });
       }
     } catch {}
   },
 
   setSearchResults: (results) => set({ searchResults: results }),
   setLoading: (isLoading) => set({ isLoading }),
-  setDarkMode: (darkMode) => set({ darkMode }),
-  setLanguage: (lang) => set({ language: lang }),
+
+  setDarkMode: (darkMode) => {
+    set({ darkMode });
+    AsyncStorage.setItem(
+      STORAGE_SETTINGS,
+      JSON.stringify({
+        pushEnabled: get().pushEnabled,
+        smartAlertsEnabled: get().smartAlertsEnabled,
+        darkMode,
+        language: get().language,
+        smartPickPreference: get().smartPickPreference,
+      })
+    ).catch(() => {});
+  },
+
+  setLanguage: (lang) => {
+    set({ language: lang });
+    AsyncStorage.setItem(
+      STORAGE_SETTINGS,
+      JSON.stringify({
+        pushEnabled: get().pushEnabled,
+        smartAlertsEnabled: get().smartAlertsEnabled,
+        darkMode: get().darkMode,
+        language: lang,
+        smartPickPreference: get().smartPickPreference,
+      })
+    ).catch(() => {});
+  },
+
   completeOnboarding: () => set({ hasOnboarded: true }),
+
+  loadInitialStorage: async () => {
+    try {
+      const [routesData, contactsData, profileData, alertsData, passData, settingsData] =
+        await Promise.all([
+          AsyncStorage.getItem(STORAGE_SAVED_ROUTES),
+          AsyncStorage.getItem(STORAGE_CONTACTS),
+          AsyncStorage.getItem(STORAGE_PROFILE),
+          AsyncStorage.getItem(STORAGE_ALERTS),
+          AsyncStorage.getItem(STORAGE_PASS),
+          AsyncStorage.getItem(STORAGE_SETTINGS),
+        ]);
+
+      if (routesData) set({ savedRoutes: JSON.parse(routesData) });
+      if (contactsData) set({ trustedContacts: JSON.parse(contactsData) });
+      if (profileData) {
+        const profile = JSON.parse(profileData);
+        set({ userProfile: profile, commuter: profile, isLoggedIn: true });
+      }
+      if (alertsData) set({ activeAlerts: JSON.parse(alertsData) });
+      if (passData) set({ activePass: JSON.parse(passData) });
+      if (settingsData) {
+        const settings = JSON.parse(settingsData);
+        set({
+          pushEnabled: settings.pushEnabled ?? true,
+          smartAlertsEnabled: settings.smartAlertsEnabled ?? true,
+          darkMode: settings.darkMode ?? false,
+          language: settings.language ?? 'en',
+          smartPickPreference: settings.smartPickPreference ?? 'fastest',
+        });
+      }
+    } catch (err) {
+      console.error('Failed to hydrate store from AsyncStorage:', err);
+    }
+  },
 
   clearAll: () =>
     set({
@@ -379,7 +576,7 @@ export const useCommuterStore = create<CommuterStoreState>((set, get) => ({
       activePass: null,
       activeAlerts: [],
       savedRoutes: [],
-      trustedContacts: [],
+      trustedContacts: DEFAULT_CONTACTS,
       searchResults: [],
       isLoading: false,
       darkMode: false,
@@ -387,4 +584,3 @@ export const useCommuterStore = create<CommuterStoreState>((set, get) => ({
 }));
 
 export default useCommuterStore;
-

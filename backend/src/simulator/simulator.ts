@@ -35,11 +35,11 @@ let usingFallbackData = false;
 
 // ─── Static Offline Fallback Data ─────────────────────────────────────────────
 const FALLBACK_TRIPS = [
-  { trip_id: 1, route_id: 1, license_plate: 'BUS001', bus_number: '10K',  capacity: 50 },
-  { trip_id: 2, route_id: 2, license_plate: 'BUS002', bus_number: '900K', capacity: 50 },
-  { trip_id: 3, route_id: 3, license_plate: 'BUS003', bus_number: '28K',  capacity: 45 },
-  { trip_id: 4, route_id: 4, license_plate: 'BUS004', bus_number: '55T',  capacity: 50 },
-  { trip_id: 5, route_id: 5, license_plate: 'BUS005', bus_number: '300N', capacity: 45 },
+  { trip_id: 1, route_id: 1, license_plate: 'AP-31-Z-1011', bus_number: '10K',  capacity: 50 },
+  { trip_id: 2, route_id: 2, license_plate: 'AP-31-Z-9002', bus_number: '900K', capacity: 50 },
+  { trip_id: 3, route_id: 3, license_plate: 'AP-31-Z-2803', bus_number: '28K',  capacity: 45 },
+  { trip_id: 4, route_id: 4, license_plate: 'AP-31-Z-5504', bus_number: '55T',  capacity: 50 },
+  { trip_id: 5, route_id: 5, license_plate: 'AP-31-Z-3005', bus_number: '300N', capacity: 45 },
 ];
 
 const FALLBACK_STOPS: Record<number, StopInfo[]> = {

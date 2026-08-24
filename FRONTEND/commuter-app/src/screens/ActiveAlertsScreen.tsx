@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -7,67 +7,76 @@ import {
   Switch,
   TouchableOpacity,
   RefreshControl,
-} from 'react-native'
-import { BRAND } from '../styles/brand'
+  Alert,
+} from 'react-native';
+import useCommuterStore from '../store/useCommuterStore';
+import { BRAND } from '../styles/brand';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000'
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://nextbus-production.up.railway.app';
 
-/**
- * Alerts & Notifications (Figma): push toggle, active route
- * subscriptions with pause/resume, and Recent Updates fed LIVE
- * from the backend alerts pipeline (/api/alerts).
- */
-export default function ActiveAlertsScreen() {
-  const [pushEnabled, setPushEnabled] = useState(true)
-  const [subs, setSubs] = useState([
-    { id: '10K', label: 'Route 10K', detail: 'Daily · 8:00 AM', paused: false },
-    { id: '900K', label: 'Route 900K', detail: 'Weekdays', paused: true },
-  ])
-  const [updates, setUpdates] = useState<any[]>([])
-  const [refreshing, setRefreshing] = useState(false)
+export default function ActiveAlertsScreen({ navigation }: any) {
+  const {
+    activeAlerts,
+    toggleAlertPause,
+    removeAlert,
+    pushEnabled,
+    setPushEnabled,
+  } = useCommuterStore();
+
+  const [updates, setUpdates] = useState<any[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
 
   const loadUpdates = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/alerts`)
-      if (res.ok) setUpdates(await res.json())
+      const res = await fetch(`${API_URL}/api/alerts?status=active`);
+      if (res.ok) {
+        const data = await res.json();
+        setUpdates(Array.isArray(data) ? data : []);
+      }
     } catch {
-      /* offline */
+      /* offline fallback */
     }
-  }
+  };
 
   useEffect(() => {
-    loadUpdates()
-    const t = setInterval(loadUpdates, 30000)
-    return () => clearInterval(t)
-  }, [])
+    loadUpdates();
+    const t = setInterval(loadUpdates, 20000);
+    return () => clearInterval(t);
+  }, []);
 
   const onRefresh = async () => {
-    setRefreshing(true)
-    await loadUpdates()
-    setRefreshing(false)
-  }
+    setRefreshing(true);
+    await loadUpdates();
+    setRefreshing(false);
+  };
 
-  const togglePause = (id: string) => {
-    setSubs((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, paused: !s.paused } : s))
-    )
-  }
+  const handleDelete = (alertId: string, routeName: string) => {
+    Alert.alert('Delete Alert', `Remove alert for ${routeName}?`, [
+      { text: 'Keep', style: 'cancel' },
+      {
+        text: 'Delete',
+        onPress: () => removeAlert(alertId),
+        style: 'destructive',
+      },
+    ]);
+  };
 
   const updateStyle = (a: any) => {
     if (a.status === 'resolved')
-      return { icon: '✅', title: 'Resolved', bg: BRAND.successSoft, fg: '#047857' }
+      return { icon: '✅', title: 'Resolved', bg: BRAND.successSoft, fg: '#047857' };
     if (a.type === 'sos')
-      return { icon: '🚨', title: 'Emergency', bg: BRAND.dangerSoft, fg: '#991B1B' }
-    return { icon: '🔧', title: 'Breakdown', bg: BRAND.warningSoft, fg: '#92400E' }
-  }
+      return { icon: '🚨', title: 'Emergency Broadcast', bg: BRAND.dangerSoft, fg: '#991B1B' };
+    return { icon: '🔧', title: 'Service Delay', bg: BRAND.warningSoft, fg: '#92400E' };
+  };
 
   const timeAgo = (iso: string) => {
-    const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000)
-    if (mins < 1) return 'just now'
-    if (mins < 60) return `${mins}m ago`
-    const hrs = Math.round(mins / 60)
-    return hrs < 24 ? `${hrs}h ago` : `${Math.round(hrs / 24)}d ago`
-  }
+    if (!iso) return 'recently';
+    const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.round(mins / 60);
+    return hrs < 24 ? `${hrs}h ago` : `${Math.round(hrs / 24)}d ago`;
+  };
 
   return (
     <ScrollView
@@ -76,17 +85,17 @@ export default function ActiveAlertsScreen() {
       showsVerticalScrollIndicator={false}
     >
       <View style={styles.topBar}>
-        <Text style={styles.title}>Transit Alerts</Text>
+        <Text style={styles.title}>Transit Alerts & Notifications</Text>
       </View>
 
-      {/* Push toggle */}
+      {/* Global Push Notifications Toggle */}
       <View style={styles.pushCard}>
         <View style={styles.pushIcon}>
           <Text style={{ fontSize: 18 }}>🔔</Text>
         </View>
         <View style={styles.pushInfo}>
           <Text style={styles.pushTitle}>Push Notifications</Text>
-          <Text style={styles.pushSub}>Manage all your transit updates</Text>
+          <Text style={styles.pushSub}>Receive real-time arrival & emergency alerts</Text>
         </View>
         <Switch
           value={pushEnabled}
@@ -96,67 +105,98 @@ export default function ActiveAlertsScreen() {
         />
       </View>
 
-      {/* Route subscriptions */}
-      <Text style={styles.sectionLabel}>ACTIVE ROUTE SUBSCRIPTIONS</Text>
-      {subs.map((s) => (
-        <View key={s.id} style={styles.subCard}>
-          <View style={styles.subBadge}>
-            <Text style={styles.subBadgeText}>{s.id}</Text>
-          </View>
-          <View style={styles.subInfo}>
-            <Text style={styles.subTitle}>{s.label}</Text>
-            <Text style={styles.subDetail}>
-              {s.paused ? 'Paused' : s.detail}
-            </Text>
-          </View>
-          <TouchableOpacity
-            style={[styles.subBtn, s.paused && styles.subBtnResume]}
-            onPress={() => togglePause(s.id)}
-          >
-            <Text
-              style={[styles.subBtnText, s.paused && styles.subBtnResumeText]}
-            >
-              {s.paused ? 'Resume' : 'Pause'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      ))}
+      {/* Active Route Subscriptions from Store */}
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionLabel}>
+          ACTIVE ROUTE SUBSCRIPTIONS ({activeAlerts.length})
+        </Text>
+      </View>
 
-      {/* Recent updates — live backend alerts */}
-      <Text style={styles.sectionLabel}>RECENT UPDATES</Text>
-      {updates.length === 0 ? (
+      {activeAlerts.length === 0 ? (
         <View style={styles.emptyCard}>
-          <Text style={styles.emptyText}>No recent service updates 🎉</Text>
+          <Text style={styles.emptyIcon}>🔔</Text>
+          <Text style={styles.emptyTitle}>No Active Route Alerts</Text>
+          <Text style={styles.emptySub}>
+            Tap "Set Alert" on any bus or route to receive smart departure notifications.
+          </Text>
         </View>
       ) : (
-        updates.slice(0, 8).map((a) => {
-          const s = updateStyle(a)
+        activeAlerts.map((s) => (
+          <View key={s.id} style={styles.subCard}>
+            <View style={[styles.subBadge, s.paused && { backgroundColor: BRAND.surfaceMuted }]}>
+              <Text style={[styles.subBadgeText, s.paused && { color: BRAND.textSecondary }]}>
+                {s.route_number || 'Route'}
+              </Text>
+            </View>
+            <View style={styles.subInfo}>
+              <Text style={styles.subTitle}>
+                {s.route_name || `Route ${s.route_number}`}
+              </Text>
+              <Text style={styles.subDetail}>
+                {s.paused ? '⏸ Paused' : s.description || `${s.thresholdMinutes || 10}m arrival alert`}
+              </Text>
+            </View>
+            <View style={styles.subActions}>
+              <TouchableOpacity
+                style={[styles.subBtn, s.paused && styles.subBtnResume]}
+                onPress={() => toggleAlertPause(s.id)}
+              >
+                <Text style={[styles.subBtnText, s.paused && styles.subBtnResumeText]}>
+                  {s.paused ? 'Resume' : 'Pause'}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.deleteBtn}
+                onPress={() => handleDelete(s.id, s.route_number || 'Route')}
+              >
+                <Text style={{ fontSize: 16 }}>🗑️</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ))
+      )}
+
+      {/* Recent Transit Updates from Railway Backend */}
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionLabel}>LIVE NETWORK DISRUPTIONS & UPDATES</Text>
+      </View>
+
+      {updates.length === 0 ? (
+        <View style={styles.allClearCard}>
+          <Text style={styles.allClearIcon}>✅</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.allClearTitle}>All Services Running Normally</Text>
+            <Text style={styles.allClearSub}>No active breakdowns or SOS incidents reported across the network.</Text>
+          </View>
+        </View>
+      ) : (
+        updates.map((a) => {
+          const s = updateStyle(a);
           return (
             <View key={a.id} style={[styles.updateCard, { backgroundColor: s.bg }]}>
               <Text style={styles.updateIcon}>{s.icon}</Text>
               <View style={styles.updateInfo}>
                 <View style={styles.updateHeader}>
                   <Text style={[styles.updateTitle, { color: s.fg }]}>
-                    {s.title}: Route {a.route_number || '?'} · Bus{' '}
-                    {a.license_plate || '?'}
+                    {s.title}: Route {a.route_number || '?'} · Bus {a.license_plate || '?'}
                   </Text>
                   <Text style={styles.updateTime}>{timeAgo(a.created_at)}</Text>
                 </View>
                 <Text style={[styles.updateBody, { color: s.fg }]}>
                   {a.description ||
                     (a.type === 'sos'
-                      ? 'Emergency reported on this bus.'
-                      : 'Bus reported a mechanical issue. Expect delays.')}
+                      ? 'Emergency signal broadcast on this vehicle.'
+                      : 'Mechanical issue reported. Expect route delays.')}
                 </Text>
               </View>
             </View>
-          )
+          );
         })
       )}
 
-      <View style={{ height: 32 }} />
+      <View style={{ height: 40 }} />
     </ScrollView>
-  )
+  );
 }
 
 const styles = StyleSheet.create({
@@ -172,7 +212,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 20,
-    fontWeight: '800',
+    fontWeight: '900',
     color: BRAND.text,
   },
   pushCard: {
@@ -198,7 +238,7 @@ const styles = StyleSheet.create({
   },
   pushTitle: {
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: '800',
     color: BRAND.text,
   },
   pushSub: {
@@ -206,14 +246,40 @@ const styles = StyleSheet.create({
     color: BRAND.textSecondary,
     marginTop: 2,
   },
+  sectionHeader: {
+    marginHorizontal: 20,
+    marginTop: 10,
+    marginBottom: 8,
+  },
   sectionLabel: {
     fontSize: 11,
     fontWeight: '800',
     letterSpacing: 1.2,
     color: BRAND.textTertiary,
-    marginHorizontal: 20,
-    marginTop: 10,
-    marginBottom: 10,
+  },
+  emptyCard: {
+    marginHorizontal: 16,
+    backgroundColor: BRAND.surface,
+    borderRadius: BRAND.radius.lg,
+    padding: 24,
+    alignItems: 'center',
+    ...BRAND.shadow,
+  },
+  emptyIcon: {
+    fontSize: 32,
+    marginBottom: 8,
+  },
+  emptyTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: BRAND.text,
+  },
+  emptySub: {
+    fontSize: 12,
+    color: BRAND.textSecondary,
+    textAlign: 'center',
+    marginTop: 4,
+    lineHeight: 18,
   },
   subCard: {
     flexDirection: 'row',
@@ -242,7 +308,7 @@ const styles = StyleSheet.create({
   },
   subTitle: {
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: '800',
     color: BRAND.text,
   },
   subDetail: {
@@ -250,10 +316,15 @@ const styles = StyleSheet.create({
     color: BRAND.textSecondary,
     marginTop: 2,
   },
+  subActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   subBtn: {
     borderRadius: BRAND.radius.pill,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
     backgroundColor: BRAND.surfaceMuted,
   },
   subBtnResume: {
@@ -267,17 +338,31 @@ const styles = StyleSheet.create({
   subBtnResumeText: {
     color: '#FFF',
   },
-  emptyCard: {
-    marginHorizontal: 16,
-    backgroundColor: BRAND.surface,
-    borderRadius: BRAND.radius.lg,
-    padding: 24,
-    alignItems: 'center',
+  deleteBtn: {
+    padding: 4,
   },
-  emptyText: {
-    color: BRAND.textSecondary,
+  allClearCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    backgroundColor: BRAND.successSoft,
+    borderRadius: BRAND.radius.lg,
+    padding: 16,
+    gap: 12,
+  },
+  allClearIcon: {
+    fontSize: 24,
+  },
+  allClearTitle: {
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '800',
+    color: '#047857',
+  },
+  allClearSub: {
+    fontSize: 12,
+    color: '#065F46',
+    marginTop: 2,
+    lineHeight: 16,
   },
   updateCard: {
     flexDirection: 'row',
@@ -314,4 +399,4 @@ const styles = StyleSheet.create({
     lineHeight: 17,
     opacity: 0.9,
   },
-})
+});

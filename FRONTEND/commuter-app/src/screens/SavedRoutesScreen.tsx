@@ -18,7 +18,11 @@ export default function SavedRoutesScreen({ navigation }: any) {
 
   const handleStartTrip = (route: any) => {
     setSelectedRoute(route);
-    navigation.navigate('Map');
+    if (navigation.getParent?.()) {
+      navigation.getParent().navigate('App', { screen: 'Map' });
+    } else {
+      navigation.navigate('App', { screen: 'Map' });
+    }
   };
 
   const handleRemove = (routeId: string | number) => {
@@ -81,7 +85,13 @@ export default function SavedRoutesScreen({ navigation }: any) {
             Bookmark your daily commute routes to access real-time bus tracking with one tap.
           </Text>
           <TouchableOpacity
-            onPress={() => navigation.navigate('Search')}
+            onPress={() => {
+              if (navigation.getParent?.()) {
+                navigation.getParent().navigate('App', { screen: 'Search' });
+              } else {
+                navigation.navigate('App', { screen: 'Search' });
+              }
+            }}
             style={{
               backgroundColor: BRAND.primary,
               borderRadius: BRAND.radius.pill,

@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { PRECOMPUTED_GEOMETRIES } from '../utils/routeGeometries';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
@@ -136,17 +137,17 @@ export default class RouteService {
    */
   async getRouteGeometry(routeId: number): Promise<{ latitude: number; longitude: number }[] | null> {
     if (!routeId || isNaN(Number(routeId))) return null;
+    const cached = PRECOMPUTED_GEOMETRIES[Number(routeId)];
     try {
       const res = await axios.get(`${API_URL}/api/routes/${routeId}/geometry`);
       const coords = res.data?.coordinates;
-      if (!Array.isArray(coords) || coords.length < 2) return null;
-      // Stored as GeoJSON [lng, lat]; react-native-maps wants {latitude, longitude}.
-      return coords
-        .map((c: any) => ({ latitude: Number(c[1]), longitude: Number(c[0]) }))
-        .filter((p: any) => Number.isFinite(p.latitude) && Number.isFinite(p.longitude));
-    } catch {
-      return null;
-    }
+      if (Array.isArray(coords) && coords.length >= 2) {
+        return coords
+          .map((c: any) => ({ latitude: Number(c[1]), longitude: Number(c[0]) }))
+          .filter((p: any) => Number.isFinite(p.latitude) && Number.isFinite(p.longitude));
+      }
+    } catch {}
+    return cached || null;
   }
 
   async getRouteStops(routeId: number): Promise<RouteStop[]> {
