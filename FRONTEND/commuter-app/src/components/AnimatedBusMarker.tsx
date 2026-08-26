@@ -19,7 +19,6 @@ function bearingBetween(lat1: number, lon1: number, lat2: number, lon2: number):
   const φ1 = toRad(lat1);
   const φ2 = toRad(lat2);
   const Δλ = toRad(lon2 - lon1);
-
   const y = Math.sin(Δλ) * Math.cos(φ2);
   const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
   return (Math.atan2(y, x) * 180) / Math.PI;
@@ -43,7 +42,7 @@ function AnimatedBusMarkerComponent({ bus, isSelected = false, onPress }: Props)
   const headingDeg = useRef(0);
   const [tracksChanges, setTracksChanges] = useState(true);
 
-  // Disable rasterization after initial frame for buttery 60fps performance
+  // Disable tracksViewChanges after first render for performance
   useEffect(() => {
     const t = setTimeout(() => setTracksChanges(false), 400);
     return () => clearTimeout(t);
@@ -76,7 +75,7 @@ function AnimatedBusMarkerComponent({ bus, isSelected = false, onPress }: Props)
 
       Animated.timing(heading, {
         toValue: headingDeg.current,
-        duration: Math.min(450, animMs.current),
+        duration: Math.min(400, animMs.current),
         easing: Easing.out(Easing.quad),
         useNativeDriver: true,
       }).start();
@@ -100,8 +99,9 @@ function AnimatedBusMarkerComponent({ bus, isSelected = false, onPress }: Props)
   });
 
   const isMoving = (bus.speed ?? 0) > 1;
-  const routeNumber = bus.routeNo || bus.route_number || '10K';
+  const routeNumber = bus.routeNo || bus.route_number || '?';
   const service = getBusService(routeNumber);
+  const color = service.badgeColor;
 
   return (
     <MarkerAnimated
@@ -111,29 +111,26 @@ function AnimatedBusMarkerComponent({ bus, isSelected = false, onPress }: Props)
       zIndex={isSelected ? 20 : 10}
       tracksViewChanges={tracksChanges}
     >
-      <View style={styles.markerContainer}>
-        {/* Selected Halo Pulse */}
-        {isSelected && (
-          <View style={[styles.haloRing, { borderColor: service.badgeColor }]} />
-        )}
+      <View style={s.wrap}>
+        {/* Pulsing selection ring */}
+        {isSelected && <View style={[s.selectionRing, { borderColor: color }]} />}
 
-        {/* Orbiting Directional Arrow */}
+        {/* Direction chevron — only when moving */}
         {isMoving && (
-          <Animated.View style={[styles.arrowOrbit, { transform: [{ rotate }] }]}>
-            <View style={[styles.arrowHead, { borderBottomColor: service.badgeColor }]} />
+          <Animated.View style={[s.chevronOrbit, { transform: [{ rotate }] }]}>
+            <View style={[s.chevron, { borderBottomColor: color }]} />
           </Animated.View>
         )}
 
-        {/* Crisp Transit Pill Badge */}
-        <View
-          style={[
-            styles.busBadge,
-            { backgroundColor: service.badgeColor },
-            isSelected && styles.busBadgeSelected,
-          ]}
-        >
-          <Text style={styles.busEmoji}>🚌</Text>
-          <Text style={styles.routeText} numberOfLines={1}>
+        {/* Main marker: colored circle (dot) with route label below */}
+        <View style={[s.dot, { backgroundColor: color }, isSelected && s.dotSelected]}>
+          {/* White stripe — mimics a windshield / bus front detail */}
+          <View style={s.stripe} />
+        </View>
+
+        {/* Route label pill underneath the dot */}
+        <View style={[s.label, { backgroundColor: color }]}>
+          <Text style={s.labelText} numberOfLines={1}>
             {routeNumber}
           </Text>
         </View>
@@ -155,77 +152,99 @@ export const AnimatedBusMarker = memo(AnimatedBusMarkerComponent, (prev, next) =
 
 export default AnimatedBusMarker;
 
-const styles = StyleSheet.create({
-  markerContainer: {
+const DOT = 22; // main circle diameter
+
+const s = StyleSheet.create({
+  wrap: {
     alignItems: 'center',
     justifyContent: 'center',
-    width: 64,
-    height: 56,
+    width: 48,
+    height: 52,
     overflow: 'visible',
   },
-  arrowOrbit: {
+
+  // Outer selection ring (like Google Maps selected pin glow)
+  selectionRing: {
     position: 'absolute',
-    width: 56,
-    height: 56,
+    top: 0,
+    width: DOT + 12,
+    height: DOT + 12,
+    borderRadius: (DOT + 12) / 2,
+    borderWidth: 2.5,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+  },
+
+  // Directional chevron orbit
+  chevronOrbit: {
+    position: 'absolute',
+    top: 0,
+    width: DOT + 12,
+    height: DOT + 12,
     alignItems: 'center',
     justifyContent: 'flex-start',
     overflow: 'visible',
   },
-  arrowHead: {
+  chevron: {
     width: 0,
     height: 0,
-    borderLeftWidth: 5,
-    borderRightWidth: 5,
-    borderBottomWidth: 9,
+    borderLeftWidth: 3.5,
+    borderRightWidth: 3.5,
+    borderBottomWidth: 6,
     borderLeftColor: 'transparent',
     borderRightColor: 'transparent',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.4,
-    shadowRadius: 2,
-    elevation: 4,
+    marginTop: -5,
   },
-  haloRing: {
-    position: 'absolute',
-    width: 58,
-    height: 50,
-    borderRadius: 25,
-    borderWidth: 2.5,
-    backgroundColor: 'rgba(67, 56, 202, 0.2)',
-    shadowColor: '#4338CA',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.6,
-    shadowRadius: 8,
-    elevation: 5,
-  },
-  busBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 14,
+
+  // Main circle dot — Uber/Rapido style
+  dot: {
+    width: DOT,
+    height: DOT,
+    borderRadius: DOT / 2,
     borderWidth: 2,
     borderColor: '#FFFFFF',
-    gap: 4,
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.35,
-    shadowRadius: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 4,
     elevation: 6,
   },
-  busBadgeSelected: {
-    transform: [{ scale: 1.12 }],
+  dotSelected: {
+    width: DOT + 4,
+    height: DOT + 4,
+    borderRadius: (DOT + 4) / 2,
+    borderWidth: 3,
     borderColor: '#FDE047',
-    borderWidth: 2.5,
   },
-  busEmoji: {
-    fontSize: 13,
+
+  // Small decorative stripe inside the circle
+  stripe: {
+    width: DOT * 0.55,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.45)',
   },
-  routeText: {
+
+  // Compact route number pill below the dot
+  label: {
+    marginTop: 3,
+    paddingHorizontal: 5,
+    paddingVertical: 1.5,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.3,
+    shadowRadius: 2,
+    elevation: 3,
+  },
+  labelText: {
     color: '#FFFFFF',
-    fontSize: 11.5,
-    fontWeight: '900',
+    fontSize: 8,
+    fontWeight: '800',
     letterSpacing: -0.2,
+    textAlign: 'center',
   },
 });

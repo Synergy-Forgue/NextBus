@@ -15,6 +15,7 @@ import WebSocket from 'ws';
 import { Pool }  from 'pg';
 import { BusAgent, StopInfo } from './busAgent';
 import { buildPoolConfig, describeTarget } from '../db/config';
+import { PRECOMPUTED_GEOMETRIES } from '../utils/routeGeometries';
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 const WS_URL   = process.env.SIM_WS_URL   || 'ws://localhost:3000/ws/publish';
@@ -178,6 +179,11 @@ async function loadStopsForRoute(route_id: number): Promise<StopInfo[]> {
  * is visibly wrong but better than not moving at all.
  */
 async function loadGeometryForRoute(route_id: number): Promise<[number, number][] | null> {
+  const clean = PRECOMPUTED_GEOMETRIES[route_id];
+  if (clean && clean.length > 1) {
+    return clean.map((p) => [p.longitude, p.latitude]);
+  }
+
   try {
     const res = await fetch(`${HTTP_URL}/api/routes/${route_id}/geometry`);
     if (res.ok) {

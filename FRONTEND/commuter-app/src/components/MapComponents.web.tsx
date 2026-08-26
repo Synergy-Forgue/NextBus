@@ -308,7 +308,7 @@ const styles = StyleSheet.create({
   },
   markerWrap: {
     position: 'absolute',
-    transform: [{ translateX: -32 }, { translateY: -28 }],
+    transform: [{ translateX: -24 }, { translateY: -26 }],
     overflow: 'visible',
   },
   defaultPin: {

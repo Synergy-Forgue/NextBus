@@ -138,6 +138,9 @@ export default class RouteService {
   async getRouteGeometry(routeId: number): Promise<{ latitude: number; longitude: number }[] | null> {
     if (!routeId || isNaN(Number(routeId))) return null;
     const cached = PRECOMPUTED_GEOMETRIES[Number(routeId)];
+    if (cached && cached.length >= 2) {
+      return cached;
+    }
     try {
       const res = await axios.get(`${API_URL}/api/routes/${routeId}/geometry`);
       const coords = res.data?.coordinates;
@@ -147,7 +150,7 @@ export default class RouteService {
           .filter((p: any) => Number.isFinite(p.latitude) && Number.isFinite(p.longitude));
       }
     } catch {}
-    return cached || null;
+    return null;
   }
 
   async getRouteStops(routeId: number): Promise<RouteStop[]> {

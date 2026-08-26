@@ -496,8 +496,15 @@ export default function HomeMapScreen({ navigation }: any) {
           );
         })}
 
-        {/* Graphical Transit Bus Icons */}
-        {liveBuses.map((bus: any) => (
+        {/* Bus Icons — filtered to selected route when a route is active */}
+        {(selectedRoute
+          ? liveBuses.filter((b: any) => {
+              const rn = (b.routeNo || b.route_number || '').toString().trim().toUpperCase();
+              const srn = (selectedRoute.route_number || '').toString().trim().toUpperCase();
+              return rn === srn;
+            })
+          : liveBuses
+        ).map((bus: any) => (
           <AnimatedBusMarker
             key={bus.busId}
             bus={bus}
