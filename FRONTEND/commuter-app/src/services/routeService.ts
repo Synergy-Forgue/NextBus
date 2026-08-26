@@ -97,22 +97,89 @@ export function computeFallbackStopEtas(stops: RouteStop[], startIdx = 0): StopE
   });
 }
 
+const FALLBACK_KALABURAGI_ROUTES: Route[] = [
+  { id: 11, route_number: '101K', route_name: 'Central Bus Stand ↔ Gulbarga University', start_stop: 'Kalaburagi Central Bus Stand', end_stop: 'Gulbarga University' },
+  { id: 12, route_number: '102K', route_name: 'Railway Station ↔ High Court Bench', start_stop: 'Kalaburagi Railway Station', end_stop: 'High Court Karnataka Bench' },
+  { id: 13, route_number: '103K', route_name: 'Central Bus Stand ↔ Khwaja Bande Nawaz Dargah', start_stop: 'Kalaburagi Central Bus Stand', end_stop: 'Roza KBN Dargah' },
+  { id: 14, route_number: '104K', route_name: 'Central Bus Stand ↔ Central University', start_stop: 'Kalaburagi Central Bus Stand', end_stop: 'Central University Kadaganchi' },
+  { id: 15, route_number: '105K', route_name: 'Humnabad Ring Road ↔ Shahabad Road Terminal', start_stop: 'Humnabad Ring Road', end_stop: 'Shahabad Road Terminal' },
+];
+
+const FALLBACK_KALABURAGI_STOPS: Record<number, RouteStop[]> = {
+  11: [
+    { stop_id: 61, stop_name: 'Kalaburagi Central Bus Stand', latitude: 17.3255, longitude: 76.8288, stop_order: 1 },
+    { stop_id: 62, stop_name: 'Jagat Circle', latitude: 17.3325, longitude: 76.8340, stop_order: 2 },
+    { stop_id: 63, stop_name: 'SVP Circle', latitude: 17.3350, longitude: 76.8385, stop_order: 3 },
+    { stop_id: 64, stop_name: 'Super Market', latitude: 17.3380, longitude: 76.8320, stop_order: 4 },
+    { stop_id: 65, stop_name: 'District Court Complex', latitude: 17.3310, longitude: 76.8480, stop_order: 5 },
+    { stop_id: 66, stop_name: 'Sedam Road Junction', latitude: 17.3120, longitude: 76.8680, stop_order: 6 },
+    { stop_id: 67, stop_name: 'Gulbarga University', latitude: 17.2970, longitude: 76.8720, stop_order: 7 },
+  ],
+  12: [
+    { stop_id: 68, stop_name: 'Kalaburagi Railway Station', latitude: 17.3400, longitude: 76.8375, stop_order: 1 },
+    { stop_id: 63, stop_name: 'SVP Circle', latitude: 17.3350, longitude: 76.8385, stop_order: 2 },
+    { stop_id: 69, stop_name: 'MSK Mill Road', latitude: 17.3270, longitude: 76.8430, stop_order: 3 },
+    { stop_id: 70, stop_name: 'Ring Road Aland Junction', latitude: 17.3520, longitude: 76.8300, stop_order: 4 },
+    { stop_id: 71, stop_name: 'High Court Karnataka Bench', latitude: 17.3620, longitude: 76.8520, stop_order: 5 },
+  ],
+  13: [
+    { stop_id: 61, stop_name: 'Kalaburagi Central Bus Stand', latitude: 17.3255, longitude: 76.8288, stop_order: 1 },
+    { stop_id: 62, stop_name: 'Jagat Circle', latitude: 17.3325, longitude: 76.8340, stop_order: 2 },
+    { stop_id: 72, stop_name: 'Kalaburagi Fort Gate', latitude: 17.3435, longitude: 76.8225, stop_order: 3 },
+    { stop_id: 73, stop_name: 'Roza KBN Dargah', latitude: 17.3510, longitude: 76.8260, stop_order: 4 },
+    { stop_id: 74, stop_name: 'KBN Teaching Hospital', latitude: 17.3480, longitude: 76.8350, stop_order: 5 },
+  ],
+  14: [
+    { stop_id: 61, stop_name: 'Kalaburagi Central Bus Stand', latitude: 17.3255, longitude: 76.8288, stop_order: 1 },
+    { stop_id: 75, stop_name: 'Ram Mandir Circle', latitude: 17.3280, longitude: 76.8510, stop_order: 2 },
+    { stop_id: 76, stop_name: 'Kusnoor Cross', latitude: 17.2950, longitude: 76.8620, stop_order: 3 },
+    { stop_id: 77, stop_name: 'Ring Road University Bypass', latitude: 17.2800, longitude: 76.8500, stop_order: 4 },
+    { stop_id: 78, stop_name: 'Central University Kadaganchi', latitude: 17.2150, longitude: 76.6350, stop_order: 5 },
+  ],
+  15: [
+    { stop_id: 79, stop_name: 'Humnabad Ring Road', latitude: 17.3580, longitude: 76.8550, stop_order: 1 },
+    { stop_id: 80, stop_name: 'Timmapuri Circle', latitude: 17.3420, longitude: 76.8460, stop_order: 2 },
+    { stop_id: 64, stop_name: 'Super Market', latitude: 17.3380, longitude: 76.8320, stop_order: 3 },
+    { stop_id: 81, stop_name: 'ESI Medical College', latitude: 17.3190, longitude: 76.8610, stop_order: 4 },
+    { stop_id: 82, stop_name: 'Shahabad Road Terminal', latitude: 17.2900, longitude: 76.8750, stop_order: 5 },
+  ],
+};
+
 export default class RouteService {
   async getRoutes(): Promise<Route[]> {
     try {
       const res = await axios.get(`${API_URL}/api/routes`);
-      return Array.isArray(res.data) ? res.data : [];
+      const list = Array.isArray(res.data) ? res.data : [];
+      const ids = new Set(list.map((r: any) => r.id));
+      for (const kr of FALLBACK_KALABURAGI_ROUTES) {
+        if (!ids.has(kr.id)) list.push(kr);
+      }
+      return list;
     } catch {
-      return [];
+      return FALLBACK_KALABURAGI_ROUTES;
     }
   }
 
   async getStops(): Promise<RouteStop[]> {
     try {
       const res = await axios.get(`${API_URL}/api/stops`);
-      return Array.isArray(res.data) ? res.data : [];
+      const list = Array.isArray(res.data) ? res.data : [];
+      const ids = new Set(list.map((s: any) => s.id ?? s.stop_id));
+      for (const stops of Object.values(FALLBACK_KALABURAGI_STOPS)) {
+        for (const s of stops) {
+          if (!ids.has(s.stop_id)) {
+            ids.add(s.stop_id);
+            list.push(s);
+          }
+        }
+      }
+      return list;
     } catch {
-      return [];
+      const all: RouteStop[] = [];
+      for (const stops of Object.values(FALLBACK_KALABURAGI_STOPS)) {
+        all.push(...stops);
+      }
+      return all;
     }
   }
 
@@ -155,6 +222,9 @@ export default class RouteService {
 
   async getRouteStops(routeId: number): Promise<RouteStop[]> {
     if (!routeId || isNaN(Number(routeId))) return [];
+    if (FALLBACK_KALABURAGI_STOPS[routeId]) {
+      return FALLBACK_KALABURAGI_STOPS[routeId];
+    }
     try {
       const res = await axios.get(`${API_URL}/api/routes/${routeId}/stops`);
       return Array.isArray(res.data) ? res.data : [];

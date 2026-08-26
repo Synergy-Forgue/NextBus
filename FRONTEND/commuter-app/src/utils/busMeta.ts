@@ -8,7 +8,7 @@ export interface BusServiceMeta {
   serviceName: string;
   serviceType: 'AC Electric' | 'AC Deluxe' | 'City Express' | 'Feeder Shuttle' | 'Heritage Special';
   badgeColor: string;
-  agency: 'APSRTC' | 'KSRTC';
+  agency: 'APSRTC' | 'KSRTC' | 'KKRTC';
   depot: string;
   defaultPlate: string;
   fareStarting: number;
@@ -139,6 +139,68 @@ export const BUS_SERVICES: Record<string, BusServiceMeta> = {
     fareStarting: 25,
     frequencyMins: 15,
     features: ['❄️ AC Deluxe', 'Reclining Seats', 'Intercity Fast Track'],
+  },
+
+  // ─── Kalaburagi Network (KKRTC) ─────────────────────────────────
+  '101K': {
+    routeNumber: '101K',
+    serviceName: 'Jnana Ganga Campus Liner',
+    serviceType: 'City Express',
+    badgeColor: '#2563EB',
+    agency: 'KKRTC',
+    depot: 'Kalaburagi Central Depot 1 (CBS)',
+    defaultPlate: 'KA 32 F 1011',
+    fareStarting: 15,
+    frequencyMins: 10,
+    features: ['Student Smart Card', 'Sedam Road Express', 'Digital Pass Tap', 'Live GPS'],
+  },
+  '102K': {
+    routeNumber: '102K',
+    serviceName: 'High Court Bench Fast Track',
+    serviceType: 'AC Deluxe',
+    badgeColor: '#059669',
+    agency: 'KKRTC',
+    depot: 'Aland Road Depot',
+    defaultPlate: 'KA 32 F 1021',
+    fareStarting: 20,
+    frequencyMins: 12,
+    features: ['❄️ AC Climate Control', 'High Court Direct', 'Comfort Seating', 'Live ETA'],
+  },
+  '103K': {
+    routeNumber: '103K',
+    serviceName: 'KBN Heritage Dargah Express',
+    serviceType: 'Heritage Special',
+    badgeColor: '#D97706',
+    agency: 'KKRTC',
+    depot: 'Roza Sub-Depot',
+    defaultPlate: 'KA 32 F 1031',
+    fareStarting: 15,
+    frequencyMins: 8,
+    features: ['Fort Corridor', 'Tourist Assistance', 'CCTV Surveillance', 'Senior Seating'],
+  },
+  '104K': {
+    routeNumber: '104K',
+    serviceName: 'Central University Shuttle',
+    serviceType: 'Feeder Shuttle',
+    badgeColor: '#7C3AED',
+    agency: 'KKRTC',
+    depot: 'Kadaganchi Hub',
+    defaultPlate: 'KA 32 F 1041',
+    fareStarting: 25,
+    frequencyMins: 15,
+    features: ['CUK Direct Express', 'Luggage Space', 'Wi-Fi Hotspot', 'Fast Track'],
+  },
+  '105K': {
+    routeNumber: '105K',
+    serviceName: 'Industrial Ring Connector',
+    serviceType: 'City Express',
+    badgeColor: '#DC2626',
+    agency: 'KKRTC',
+    depot: 'Shahabad Road Depot',
+    defaultPlate: 'KA 32 F 1051',
+    fareStarting: 15,
+    frequencyMins: 10,
+    features: ['Ring Road High Speed', 'Low Floor Entry', 'Digital QR Tickets'],
   },
 };
 

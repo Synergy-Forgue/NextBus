@@ -36,14 +36,28 @@ let usingFallbackData = false;
 
 // ─── Static Offline Fallback Data ─────────────────────────────────────────────
 const FALLBACK_TRIPS = [
-  { trip_id: 1, route_id: 1, license_plate: 'AP-31-Z-1011', bus_number: '10K',  capacity: 50 },
-  { trip_id: 2, route_id: 2, license_plate: 'AP-31-Z-9002', bus_number: '900K', capacity: 50 },
-  { trip_id: 3, route_id: 3, license_plate: 'AP-31-Z-2803', bus_number: '28K',  capacity: 45 },
-  { trip_id: 4, route_id: 4, license_plate: 'AP-31-Z-5504', bus_number: '55T',  capacity: 50 },
-  { trip_id: 5, route_id: 5, license_plate: 'AP-31-Z-3005', bus_number: '300N', capacity: 45 },
+  // Visakhapatnam (APSRTC)
+  { trip_id: 1,  route_id: 1,  license_plate: 'AP-31-Z-1011', bus_number: '10K',  capacity: 50 },
+  { trip_id: 2,  route_id: 2,  license_plate: 'AP-31-Z-9002', bus_number: '900K', capacity: 50 },
+  { trip_id: 3,  route_id: 3,  license_plate: 'AP-31-Z-2803', bus_number: '28K',  capacity: 45 },
+  { trip_id: 4,  route_id: 4,  license_plate: 'AP-31-Z-5504', bus_number: '55T',  capacity: 50 },
+  { trip_id: 5,  route_id: 5,  license_plate: 'AP-31-Z-3005', bus_number: '300N', capacity: 45 },
+  // Mysuru (KSRTC)
+  { trip_id: 6,  route_id: 6,  license_plate: 'KA-09-F-2011', bus_number: '201M', capacity: 50 },
+  { trip_id: 7,  route_id: 7,  license_plate: 'KA-09-F-1501', bus_number: '150M', capacity: 45 },
+  { trip_id: 8,  route_id: 8,  license_plate: 'KA-09-F-3031', bus_number: '303M', capacity: 45 },
+  { trip_id: 9,  route_id: 9,  license_plate: 'KA-09-F-4121', bus_number: '412M', capacity: 50 },
+  { trip_id: 10, route_id: 10, license_plate: 'KA-09-F-3071', bus_number: '307M', capacity: 55 },
+  // Kalaburagi (KKRTC)
+  { trip_id: 11, route_id: 11, license_plate: 'KA-32-F-1011', bus_number: '101K', capacity: 50 },
+  { trip_id: 12, route_id: 12, license_plate: 'KA-32-F-1021', bus_number: '102K', capacity: 45 },
+  { trip_id: 13, route_id: 13, license_plate: 'KA-32-F-1031', bus_number: '103K', capacity: 45 },
+  { trip_id: 14, route_id: 14, license_plate: 'KA-32-F-1041', bus_number: '104K', capacity: 50 },
+  { trip_id: 15, route_id: 15, license_plate: 'KA-32-F-1051', bus_number: '105K', capacity: 50 },
 ];
 
 const FALLBACK_STOPS: Record<number, StopInfo[]> = {
+  // ─── Visakhapatnam ──────────────────────────────────────────────
   1: [
     { stop_id: 1, stop_name: 'RTC Complex', latitude: 17.7261, longitude: 83.3085, stop_order: 1 },
     { stop_id: 2, stop_name: 'Dwaraka Bus Station', latitude: 17.7270, longitude: 83.3075, stop_order: 2 },
@@ -95,6 +109,89 @@ const FALLBACK_STOPS: Record<number, StopInfo[]> = {
     { stop_id: 3,  stop_name: 'Jagadamba Junction', latitude: 17.7126, longitude: 83.3023, stop_order: 7 },
     { stop_id: 5,  stop_name: 'RK Beach', latitude: 17.7134, longitude: 83.3323, stop_order: 8 },
   ],
+
+  // ─── Mysuru ─────────────────────────────────────────────────────
+  6: [
+    { stop_id: 31, stop_name: 'Mysuru City Bus Stand', latitude: 12.3095, longitude: 76.6540, stop_order: 1 },
+    { stop_id: 34, stop_name: 'K R Circle', latitude: 12.3072, longitude: 76.6524, stop_order: 2 },
+    { stop_id: 35, stop_name: 'Mysuru Palace', latitude: 12.3052, longitude: 76.6552, stop_order: 3 },
+    { stop_id: 36, stop_name: 'Mysuru Zoo', latitude: 12.3022, longitude: 76.6640, stop_order: 4 },
+    { stop_id: 37, stop_name: 'Lalitha Mahal Road', latitude: 12.2960, longitude: 76.6720, stop_order: 5 },
+    { stop_id: 38, stop_name: 'Nandi Statue', latitude: 12.2790, longitude: 76.6720, stop_order: 6 },
+    { stop_id: 39, stop_name: 'Chamundi Hills', latitude: 12.2724, longitude: 76.6706, stop_order: 7 },
+  ],
+  7: [
+    { stop_id: 33, stop_name: 'Mysuru Railway Station', latitude: 12.3172, longitude: 76.6427, stop_order: 1 },
+    { stop_id: 32, stop_name: 'Sub Urban Bus Stand', latitude: 12.3140, longitude: 76.6440, stop_order: 2 },
+    { stop_id: 40, stop_name: 'Devaraja Market', latitude: 12.3085, longitude: 76.6512, stop_order: 3 },
+    { stop_id: 41, stop_name: 'K R Hospital', latitude: 12.3060, longitude: 76.6480, stop_order: 4 },
+    { stop_id: 42, stop_name: 'Ramaswamy Circle', latitude: 12.3110, longitude: 76.6390, stop_order: 5 },
+    { stop_id: 43, stop_name: 'Saraswathipuram', latitude: 12.3055, longitude: 76.6300, stop_order: 6 },
+    { stop_id: 44, stop_name: 'JSS Hospital', latitude: 12.2958, longitude: 76.6300, stop_order: 7 },
+    { stop_id: 45, stop_name: 'Kuvempunagar', latitude: 12.2861, longitude: 76.6191, stop_order: 8 },
+  ],
+  8: [
+    { stop_id: 46, stop_name: 'Bannimantap', latitude: 12.3300, longitude: 76.6600, stop_order: 1 },
+    { stop_id: 47, stop_name: 'Yadavagiri', latitude: 12.3270, longitude: 76.6470, stop_order: 2 },
+    { stop_id: 48, stop_name: 'Gokulam', latitude: 12.3210, longitude: 76.6330, stop_order: 3 },
+    { stop_id: 42, stop_name: 'Ramaswamy Circle', latitude: 12.3110, longitude: 76.6390, stop_order: 4 },
+    { stop_id: 49, stop_name: 'Vijayanagar', latitude: 12.3260, longitude: 76.6120, stop_order: 5 },
+    { stop_id: 50, stop_name: 'Bogadi', latitude: 12.3120, longitude: 76.5950, stop_order: 6 },
+  ],
+  9: [
+    { stop_id: 31, stop_name: 'Mysuru City Bus Stand', latitude: 12.3095, longitude: 76.6540, stop_order: 1 },
+    { stop_id: 51, stop_name: 'Paduvarahalli', latitude: 12.3230, longitude: 76.6280, stop_order: 2 },
+    { stop_id: 52, stop_name: 'Metagalli', latitude: 12.3400, longitude: 76.6220, stop_order: 3 },
+    { stop_id: 53, stop_name: 'Hebbal Industrial Area', latitude: 12.3480, longitude: 76.6100, stop_order: 4 },
+    { stop_id: 54, stop_name: 'Hootagalli', latitude: 12.3450, longitude: 76.5980, stop_order: 5 },
+  ],
+  10: [
+    { stop_id: 31, stop_name: 'Mysuru City Bus Stand', latitude: 12.3095, longitude: 76.6540, stop_order: 1 },
+    { stop_id: 32, stop_name: 'Sub Urban Bus Stand', latitude: 12.3140, longitude: 76.6440, stop_order: 2 },
+    { stop_id: 55, stop_name: 'Hinkal', latitude: 12.3390, longitude: 76.6180, stop_order: 3 },
+    { stop_id: 56, stop_name: 'Belagola', latitude: 12.3800, longitude: 76.6500, stop_order: 4 },
+    { stop_id: 57, stop_name: 'Ranganathittu', latitude: 12.4090, longitude: 76.6650, stop_order: 5 },
+    { stop_id: 58, stop_name: 'Srirangapatna', latitude: 12.4181, longitude: 76.6947, stop_order: 6 },
+  ],
+
+  // ─── Kalaburagi ─────────────────────────────────────────────────
+  11: [
+    { stop_id: 61, stop_name: 'Kalaburagi Central Bus Stand', latitude: 17.3255, longitude: 76.8288, stop_order: 1 },
+    { stop_id: 62, stop_name: 'Jagat Circle', latitude: 17.3325, longitude: 76.8340, stop_order: 2 },
+    { stop_id: 63, stop_name: 'SVP Circle', latitude: 17.3350, longitude: 76.8385, stop_order: 3 },
+    { stop_id: 64, stop_name: 'Super Market', latitude: 17.3380, longitude: 76.8320, stop_order: 4 },
+    { stop_id: 65, stop_name: 'District Court Complex', latitude: 17.3310, longitude: 76.8480, stop_order: 5 },
+    { stop_id: 66, stop_name: 'Sedam Road Junction', latitude: 17.3120, longitude: 76.8680, stop_order: 6 },
+    { stop_id: 67, stop_name: 'Gulbarga University', latitude: 17.2970, longitude: 76.8720, stop_order: 7 },
+  ],
+  12: [
+    { stop_id: 68, stop_name: 'Kalaburagi Railway Station', latitude: 17.3400, longitude: 76.8375, stop_order: 1 },
+    { stop_id: 63, stop_name: 'SVP Circle', latitude: 17.3350, longitude: 76.8385, stop_order: 2 },
+    { stop_id: 69, stop_name: 'MSK Mill Road', latitude: 17.3270, longitude: 76.8430, stop_order: 3 },
+    { stop_id: 70, stop_name: 'Ring Road Aland Junction', latitude: 17.3520, longitude: 76.8300, stop_order: 4 },
+    { stop_id: 71, stop_name: 'High Court Karnataka Bench', latitude: 17.3620, longitude: 76.8520, stop_order: 5 },
+  ],
+  13: [
+    { stop_id: 61, stop_name: 'Kalaburagi Central Bus Stand', latitude: 17.3255, longitude: 76.8288, stop_order: 1 },
+    { stop_id: 62, stop_name: 'Jagat Circle', latitude: 17.3325, longitude: 76.8340, stop_order: 2 },
+    { stop_id: 72, stop_name: 'Kalaburagi Fort Gate', latitude: 17.3435, longitude: 76.8225, stop_order: 3 },
+    { stop_id: 73, stop_name: 'Roza KBN Dargah', latitude: 17.3510, longitude: 76.8260, stop_order: 4 },
+    { stop_id: 74, stop_name: 'KBN Teaching Hospital', latitude: 17.3480, longitude: 76.8350, stop_order: 5 },
+  ],
+  14: [
+    { stop_id: 61, stop_name: 'Kalaburagi Central Bus Stand', latitude: 17.3255, longitude: 76.8288, stop_order: 1 },
+    { stop_id: 75, stop_name: 'Ram Mandir Circle', latitude: 17.3280, longitude: 76.8510, stop_order: 2 },
+    { stop_id: 76, stop_name: 'Kusnoor Cross', latitude: 17.2950, longitude: 76.8620, stop_order: 3 },
+    { stop_id: 77, stop_name: 'Ring Road University Bypass', latitude: 17.2800, longitude: 76.8500, stop_order: 4 },
+    { stop_id: 78, stop_name: 'Central University Kadaganchi', latitude: 17.2150, longitude: 76.6350, stop_order: 5 },
+  ],
+  15: [
+    { stop_id: 79, stop_name: 'Humnabad Ring Road', latitude: 17.3580, longitude: 76.8550, stop_order: 1 },
+    { stop_id: 80, stop_name: 'Timmapuri Circle', latitude: 17.3420, longitude: 76.8460, stop_order: 2 },
+    { stop_id: 64, stop_name: 'Super Market', latitude: 17.3380, longitude: 76.8320, stop_order: 3 },
+    { stop_id: 81, stop_name: 'ESI Medical College', latitude: 17.3190, longitude: 76.8610, stop_order: 4 },
+    { stop_id: 82, stop_name: 'Shahabad Road Terminal', latitude: 17.2900, longitude: 76.8750, stop_order: 5 },
+  ],
 };
 
 async function loadTrips() {
@@ -103,13 +200,21 @@ async function loadTrips() {
     if (res.ok) {
       const data = (await res.json()) as any[];
       if (data.length > 0) {
-        return data.map((t) => ({
+        const existingRouteIds = new Set(data.map((t) => t.route_id));
+        const merged = data.map((t) => ({
           trip_id:       t.id,
           route_id:      t.route_id,
           license_plate: t.license_plate,
           bus_number:    t.bus_number || t.route_number,
           capacity:      50,
         }));
+        // Ensure Kalaburagi and any un-migrated routes from FALLBACK_TRIPS are actively simulated
+        for (const ft of FALLBACK_TRIPS) {
+          if (!existingRouteIds.has(ft.route_id)) {
+            merged.push(ft);
+          }
+        }
+        return merged;
       }
     }
   } catch {}
@@ -136,8 +241,7 @@ async function loadTrips() {
   console.warn(`    DB  : ${describeTarget()}`);
   if (dbError) console.warn(`    DB error: ${dbError}`);
   console.warn('');
-  console.warn('    Falling back to 5 hardcoded Vizag buses with straight-line');
-  console.warn('    routes. This is NOT your real network — do not demo it.');
+  console.warn('    Falling back to 15 hardcoded buses (Vizag, Mysuru, Kalaburagi).');
   console.warn('    Set DATABASE_URL to the public proxy URL (…proxy.rlwy.net)');
   console.warn('    and SIM_WS_URL to your deployed backend.');
   console.warn('');

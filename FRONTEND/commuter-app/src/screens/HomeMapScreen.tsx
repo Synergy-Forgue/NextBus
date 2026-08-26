@@ -14,7 +14,7 @@ import useRealTimeBus from '../hooks/useRealTimeBus';
 import { routeService } from '../services/routeService';
 import { BRAND } from '../styles/brand';
 import AnimatedBusMarker from '../components/AnimatedBusMarker';
-import { cityIdForCoords } from '../utils/cities';
+import { CITIES, cityIdForCoords, getCity } from '../utils/cities';
 import { getBusService, formatBusPlate } from '../utils/busMeta';
 
 // Vector projection of a point onto a line segment [A, B]
@@ -50,7 +50,7 @@ function projectPointOnSegment(
 export default function HomeMapScreen({ navigation }: any) {
   const [userLocation, setUserLocation] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [activeCityId, setActiveCityId] = useState<'vizag' | 'mysuru'>('vizag');
+  const [activeCityId, setActiveCityId] = useState<string>('vizag');
   const [routeStops, setRouteStops] = useState<any[]>([]);
   const [routeGeometry, setRouteGeometry] = useState<{ latitude: number; longitude: number }[] | null>(null);
   const mapRef = useRef<MapView>(null);
@@ -76,7 +76,7 @@ export default function HomeMapScreen({ navigation }: any) {
   useEffect(() => {
     if (selectedBus?.lat && selectedBus?.lng) {
       const cId = cityIdForCoords(selectedBus.lat, selectedBus.lng);
-      if (cId === 'vizag' || cId === 'mysuru') {
+      if (cId) {
         setActiveCityId(cId);
       }
     }
@@ -170,7 +170,7 @@ export default function HomeMapScreen({ navigation }: any) {
   };
 
   const handleSwitchCity = useCallback(
-    (cityId: 'vizag' | 'mysuru') => {
+    (cityId: string) => {
       setActiveCityId(cityId);
       if (selectedRoute || selectedBus) {
         setSelectedRoute(null);
@@ -178,10 +178,10 @@ export default function HomeMapScreen({ navigation }: any) {
         setRouteStops([]);
       }
 
-      const targetCenter =
-        cityId === 'vizag'
-          ? { latitude: 17.7261, longitude: 83.3085, latitudeDelta: 0.12, longitudeDelta: 0.12 }
-          : { latitude: 12.3052, longitude: 76.6552, latitudeDelta: 0.12, longitudeDelta: 0.12 };
+      const cityDef = getCity(cityId);
+      const targetCenter = cityDef?.center
+        ? { latitude: cityDef.center.latitude, longitude: cityDef.center.longitude, latitudeDelta: 0.12, longitudeDelta: 0.12 }
+        : { latitude: 17.7261, longitude: 83.3085, latitudeDelta: 0.12, longitudeDelta: 0.12 };
 
       mapRef.current?.animateToRegion(targetCenter, 700);
     },
@@ -189,10 +189,10 @@ export default function HomeMapScreen({ navigation }: any) {
   );
 
   const recenter = useCallback(() => {
-    const defaultCenter =
-      activeCityId === 'vizag'
-        ? { latitude: 17.7261, longitude: 83.3085, latitudeDelta: 0.08, longitudeDelta: 0.08 }
-        : { latitude: 12.3052, longitude: 76.6552, latitudeDelta: 0.08, longitudeDelta: 0.08 };
+    const cityDef = getCity(activeCityId);
+    const defaultCenter = cityDef?.center
+      ? { latitude: cityDef.center.latitude, longitude: cityDef.center.longitude, latitudeDelta: 0.08, longitudeDelta: 0.08 }
+      : { latitude: 17.7261, longitude: 83.3085, latitudeDelta: 0.08, longitudeDelta: 0.08 };
 
     mapRef.current?.animateToRegion(
       userLocation?.lat
@@ -539,66 +539,47 @@ export default function HomeMapScreen({ navigation }: any) {
           )}
         </View>
 
-        {/* Visakhapatnam & Mysuru City Selector Switch Buttons */}
-        <View style={styles.citySwitcherBar}>
-          <TouchableOpacity
-            style={[
-              styles.cityTabBtn,
-              activeCityId === 'vizag' && styles.cityTabBtnActive,
-            ]}
-            onPress={() => handleSwitchCity('vizag')}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.cityTabEmoji}>🌊</Text>
-            <View>
-              <Text
+        {/* Dynamic Multi-City Selector Switch Buttons (Vizag, Mysuru, Kalaburagi) */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.citySwitcherBar}
+        >
+          {CITIES.map((c) => {
+            const isActive = activeCityId === c.id;
+            return (
+              <TouchableOpacity
+                key={c.id}
                 style={[
-                  styles.cityTabTitle,
-                  activeCityId === 'vizag' && styles.cityTabTitleActive,
+                  styles.cityTabBtn,
+                  isActive && styles.cityTabBtnActive,
                 ]}
+                onPress={() => handleSwitchCity(c.id)}
+                activeOpacity={0.85}
               >
-                Visakhapatnam
-              </Text>
-              <Text
-                style={[
-                  styles.cityTabSub,
-                  activeCityId === 'vizag' && styles.cityTabSubActive,
-                ]}
-              >
-                APSRTC Network
-              </Text>
-            </View>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.cityTabBtn,
-              activeCityId === 'mysuru' && styles.cityTabBtnActive,
-            ]}
-            onPress={() => handleSwitchCity('mysuru')}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.cityTabEmoji}>🏛️</Text>
-            <View>
-              <Text
-                style={[
-                  styles.cityTabTitle,
-                  activeCityId === 'mysuru' && styles.cityTabTitleActive,
-                ]}
-              >
-                Mysuru
-              </Text>
-              <Text
-                style={[
-                  styles.cityTabSub,
-                  activeCityId === 'mysuru' && styles.cityTabSubActive,
-                ]}
-              >
-                KSRTC Network
-              </Text>
-            </View>
-          </TouchableOpacity>
-        </View>
+                <Text style={styles.cityTabEmoji}>{c.emoji}</Text>
+                <View>
+                  <Text
+                    style={[
+                      styles.cityTabTitle,
+                      isActive && styles.cityTabTitleActive,
+                    ]}
+                  >
+                    {c.name}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.cityTabSub,
+                      isActive && styles.cityTabSubActive,
+                    ]}
+                  >
+                    {c.region.split('·')[1]?.trim() || c.region}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
       </View>
 
       {/* Ama Bus Style Live Telemetry Cockpit Drawer */}
@@ -833,18 +814,19 @@ const styles = StyleSheet.create({
   citySwitcherBar: {
     flexDirection: 'row',
     gap: 8,
+    paddingVertical: 2,
   },
   cityTabBtn: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: 'rgba(15, 23, 42, 0.9)',
+    backgroundColor: 'rgba(15, 23, 42, 0.92)',
     borderRadius: BRAND.radius.lg,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
+    paddingHorizontal: 13,
+    paddingVertical: 8,
     borderWidth: 1.5,
     borderColor: 'rgba(255, 255, 255, 0.12)',
+    minWidth: 125,
     ...BRAND.shadow,
   },
   cityTabBtnActive: {

@@ -39,6 +39,14 @@ export const CITIES: CityDef[] = [
     bounds: [12.2, 12.5, 76.5, 76.8],
     center: { latitude: 12.3052, longitude: 76.6552 },
   },
+  {
+    id: 'kalaburagi',
+    name: 'Kalaburagi',
+    region: 'Karnataka · KKRTC',
+    emoji: '🏰',
+    bounds: [17.15, 17.55, 76.65, 77.05],
+    center: { latitude: 17.3297, longitude: 76.8343 },
+  },
 ];
 
 /** A stop as the UI needs it, regardless of which endpoint shape it came from. */

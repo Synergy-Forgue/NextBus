@@ -280,4 +280,79 @@ export const PRECOMPUTED_GEOMETRIES: Record<number, { latitude: number; longitud
     { latitude: 12.4180, longitude: 76.6890 },
     { latitude: 12.4216, longitude: 76.6931 }, // Srirangapatna
   ],
+
+  // ─── Route 11: 101K — Central Bus Stand (CBS) → Gulbarga University (Kalaburagi, ~14 km)
+  // CBS → Jagat Circle → SVP Circle → Super Market → Court → Sedam Road → GUG
+  11: [
+    { latitude: 17.3255, longitude: 76.8288 }, // Kalaburagi CBS
+    { latitude: 17.3280, longitude: 76.8310 },
+    { latitude: 17.3325, longitude: 76.8340 }, // Jagat Circle
+    { latitude: 17.3340, longitude: 76.8365 },
+    { latitude: 17.3350, longitude: 76.8385 }, // SVP Circle
+    { latitude: 17.3365, longitude: 76.8350 },
+    { latitude: 17.3380, longitude: 76.8320 }, // Super Market
+    { latitude: 17.3350, longitude: 76.8410 },
+    { latitude: 17.3310, longitude: 76.8480 }, // District Court Complex
+    { latitude: 17.3250, longitude: 76.8540 },
+    { latitude: 17.3180, longitude: 76.8620 },
+    { latitude: 17.3120, longitude: 76.8680 }, // Sedam Road Junction
+    { latitude: 17.3050, longitude: 76.8700 },
+    { latitude: 17.2970, longitude: 76.8720 }, // Gulbarga University
+  ],
+
+  // ─── Route 12: 102K — Kalaburagi Railway Station → High Court Bench (Kalaburagi, ~16 km)
+  // Station → SVP Circle → MSK Mill → Ring Road → High Court
+  12: [
+    { latitude: 17.3400, longitude: 76.8375 }, // Railway Station
+    { latitude: 17.3375, longitude: 76.8380 },
+    { latitude: 17.3350, longitude: 76.8385 }, // SVP Circle
+    { latitude: 17.3310, longitude: 76.8405 },
+    { latitude: 17.3270, longitude: 76.8430 }, // MSK Mill Road
+    { latitude: 17.3330, longitude: 76.8460 },
+    { latitude: 17.3420, longitude: 76.8420 },
+    { latitude: 17.3520, longitude: 76.8300 }, // Ring Road Aland Junction
+    { latitude: 17.3570, longitude: 76.8400 },
+    { latitude: 17.3620, longitude: 76.8520 }, // High Court Karnataka Bench
+  ],
+
+  // ─── Route 13: 103K — Central Bus Stand (CBS) → Khwaja Bande Nawaz Dargah (Kalaburagi, ~9 km)
+  // CBS → Jagat Circle → Fort Gate → KBN Dargah → KBN Hospital
+  13: [
+    { latitude: 17.3255, longitude: 76.8288 }, // CBS
+    { latitude: 17.3290, longitude: 76.8315 },
+    { latitude: 17.3325, longitude: 76.8340 }, // Jagat Circle
+    { latitude: 17.3380, longitude: 76.8280 },
+    { latitude: 17.3435, longitude: 76.8225 }, // Kalaburagi Fort Gate
+    { latitude: 17.3470, longitude: 76.8240 },
+    { latitude: 17.3510, longitude: 76.8260 }, // Roza KBN Dargah
+    { latitude: 17.3495, longitude: 76.8305 },
+    { latitude: 17.3480, longitude: 76.8350 }, // KBN Teaching Hospital
+  ],
+
+  // ─── Route 14: 104K — Central Bus Stand (CBS) → Central University Kadaganchi (Kalaburagi, ~32 km)
+  // CBS → Ram Mandir → Kusnoor → Ring Road Bypass → CUK Kadaganchi
+  14: [
+    { latitude: 17.3255, longitude: 76.8288 }, // CBS
+    { latitude: 17.3265, longitude: 76.8390 },
+    { latitude: 17.3280, longitude: 76.8510 }, // Ram Mandir Circle
+    { latitude: 17.3120, longitude: 76.8580 },
+    { latitude: 17.2950, longitude: 76.8620 }, // Kusnoor Cross
+    { latitude: 17.2800, longitude: 76.8500 }, // Ring Road Bypass
+    { latitude: 17.2550, longitude: 76.7800 },
+    { latitude: 17.2350, longitude: 76.7100 },
+    { latitude: 17.2150, longitude: 76.6350 }, // Central University Kadaganchi
+  ],
+
+  // ─── Route 15: 105K — Humnabad Ring Road → Shahabad Road Terminal (Kalaburagi, ~18 km)
+  // Humnabad Ring Road → Timmapuri Circle → Super Market → ESI Medical → Shahabad Rd
+  15: [
+    { latitude: 17.3580, longitude: 76.8550 }, // Humnabad Ring Road
+    { latitude: 17.3500, longitude: 76.8500 },
+    { latitude: 17.3420, longitude: 76.8460 }, // Timmapuri Circle
+    { latitude: 17.3380, longitude: 76.8320 }, // Super Market
+    { latitude: 17.3280, longitude: 76.8450 },
+    { latitude: 17.3190, longitude: 76.8610 }, // ESI Medical College
+    { latitude: 17.3050, longitude: 76.8690 },
+    { latitude: 17.2900, longitude: 76.8750 }, // Shahabad Road Terminal
+  ],
 };
