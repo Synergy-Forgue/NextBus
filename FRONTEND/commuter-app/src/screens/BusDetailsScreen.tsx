@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   View,
   StyleSheet,
@@ -9,10 +9,34 @@ import {
 } from 'react-native';
 import { Text, Card, Button, Divider, Chip, Icon } from 'react-native-paper';
 import useCommuterStore from '../store/useCommuterStore';
+import useRealTimeBus from '../hooks/useRealTimeBus';
 import { routeService } from '../services/routeService';
 import { CONSTANTS } from '../utils/constants';
 import { BRAND } from '../styles/brand';
 import { getBusService, formatBusPlate } from '../utils/busMeta';
+
+// Haversine distance in meters / km
+function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): { meters: number; text: string } {
+  if (!Number.isFinite(lat1) || !Number.isFinite(lon1) || !Number.isFinite(lat2) || !Number.isFinite(lon2)) {
+    return { meters: 0, text: '—' };
+  }
+  const R = 6371e3; // Earth radius in meters
+  const phi1 = (lat1 * Math.PI) / 180;
+  const phi2 = (lat2 * Math.PI) / 180;
+  const deltaPhi = ((lat2 - lat1) * Math.PI) / 180;
+  const deltaLambda = ((lon2 - lon1) * Math.PI) / 180;
+
+  const a =
+    Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
+    Math.cos(phi1) * Math.cos(phi2) * Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  const meters = Math.round(R * c);
+
+  if (meters < 1000) {
+    return { meters, text: `${meters} m` };
+  }
+  return { meters, text: `${(meters / 1000).toFixed(1)} km` };
+}
 
 export default function BusDetailsScreen({ route, navigation }: any) {
   const { params } = route;
@@ -23,17 +47,38 @@ export default function BusDetailsScreen({ route, navigation }: any) {
     setSelectedBus,
     addSavedRoute,
     savedRoutes,
-    busPositions,
   } = useCommuterStore();
 
-  const bus = { ...paramBus, ...(busPositions?.[paramBus.busId] ?? {}) };
+  // Active subscription to real-time WebSocket telemetry stream
+  const { busPositions, isConnected } = useRealTimeBus();
 
-  const etaByStopId = new Map<number, number>();
-  for (const e of bus.stop_etas || []) {
-    if (e?.eta_seconds !== null && e?.eta_seconds !== undefined) {
-      etaByStopId.set(Number(e.stop_id), Number(e.eta_seconds));
+  // Dynamic live matching against incoming bus positions
+  const busKey = String(paramBus.busId || paramBus.trip_id || paramBus.id || '');
+  const liveMatch = useMemo(() => {
+    if (busPositions[busKey]) return busPositions[busKey];
+    return (
+      Object.values(busPositions).find(
+        (b: any) =>
+          b.busId === busKey ||
+          b.trip_id === paramBus.trip_id ||
+          (paramBus.licensePlate && b.licensePlate === paramBus.licensePlate) ||
+          (paramBus.routeNo && b.routeNo === paramBus.routeNo)
+      ) || paramBus
+    );
+  }, [busPositions, busKey, paramBus]);
+
+  const bus = { ...paramBus, ...liveMatch };
+
+  const etaByStopId = useMemo(() => {
+    const map = new Map<number, number>();
+    for (const e of bus.stop_etas || []) {
+      if (e?.eta_seconds !== null && e?.eta_seconds !== undefined) {
+        map.set(Number(e.stop_id), Number(e.eta_seconds));
+      }
     }
-  }
+    return map;
+  }, [bus.stop_etas]);
+
   const nextStopIndex = Number(bus.nextStopIndex ?? -1);
 
   const formatEta = (seconds?: number) => {
@@ -118,6 +163,17 @@ export default function BusDetailsScreen({ route, navigation }: any) {
   const startStopName = stops[0]?.stop_name || bus.source || 'Origin Terminal';
   const endStopName = stops[stops.length - 1]?.stop_name || bus.destination || 'Destination Terminal';
 
+  const nextStopObj = stops[nextStopIndex] || null;
+  const prevStopObj = nextStopIndex > 0 ? stops[nextStopIndex - 1] : null;
+
+  // Live distance from current bus GPS coordinates to the upcoming stop
+  const distToNextStop = useMemo(() => {
+    if (!bus?.lat || !bus?.lng || !nextStopObj?.latitude || !nextStopObj?.longitude) {
+      return null;
+    }
+    return calculateDistance(bus.lat, bus.lng, Number(nextStopObj.latitude), Number(nextStopObj.longitude));
+  }, [bus?.lat, bus?.lng, nextStopObj]);
+
   const nextStop = (bus.stop_etas || []).find(
     (s: any) => s?.eta_seconds !== null && s?.eta_seconds !== undefined
   );
@@ -130,12 +186,34 @@ export default function BusDetailsScreen({ route, navigation }: any) {
 
   const fare = service.fareStarting;
 
+  // Percentage of route completed
+  const progressPercent = useMemo(() => {
+    if (!stops.length) return 0;
+    if (nextStopIndex < 0) return 10;
+    return Math.min(100, Math.round(((nextStopIndex) / stops.length) * 100));
+  }, [nextStopIndex, stops.length]);
+
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {/* Cockpit Header Card (Ama Bus Style) */}
         <Card style={styles.headerCard}>
           <Card.Content>
+            {/* Live Telemetry Status Banner */}
+            <View style={styles.liveStatusRow}>
+              <View style={styles.liveBadge}>
+                <View style={[styles.liveDot, { backgroundColor: isConnected ? '#10B981' : '#F59E0B' }]} />
+                <Text style={styles.liveBadgeText}>
+                  {isConnected ? 'LIVE TELEMETRY STREAMING' : 'CONNECTING GPS…'}
+                </Text>
+              </View>
+              {bus.speed != null && (
+                <Text style={styles.liveSpeedBadge}>
+                  ⚡ {bus.speed} km/h
+                </Text>
+              )}
+            </View>
+
             <View style={styles.headerTop}>
               <View style={[styles.badgeLarge, { backgroundColor: service.badgeColor }]}>
                 <Text style={styles.badgeLargeText}>Line {routeNumber}</Text>
@@ -163,13 +241,47 @@ export default function BusDetailsScreen({ route, navigation }: any) {
               </Text>
             </View>
 
+            {/* Current En-Route / Approaching Stop Banner */}
+            {nextStopObj && (
+              <View style={styles.currentTransitBanner}>
+                <Text style={styles.currentTransitIcon}>
+                  {bus.speed === 0 || (distToNextStop && distToNextStop.meters < 60) ? '🚏' : '🚍'}
+                </Text>
+                <View style={styles.currentTransitTextCol}>
+                  <Text style={styles.currentTransitTitle}>
+                    {bus.speed === 0 || (distToNextStop && distToNextStop.meters < 60)
+                      ? `At Stop: ${nextStopObj.stop_name}`
+                      : `En Route to ${nextStopObj.stop_name}`}
+                  </Text>
+                  <Text style={styles.currentTransitSub}>
+                    {distToNextStop ? `${distToNextStop.text} away` : ''}
+                    {nextStopEtaText ? ` · ETA ${nextStopEtaText}` : ''}
+                    {prevStopObj ? ` · Departed ${prevStopObj.stop_name}` : ''}
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            {/* Progress Bar along route */}
+            <View style={styles.progressContainer}>
+              <View style={styles.progressBarWrap}>
+                <View style={[styles.progressBarFill, { width: `${progressPercent}%`, backgroundColor: service.badgeColor }]} />
+              </View>
+              <View style={styles.progressLabelRow}>
+                <Text style={styles.progressLabel}>
+                  {nextStopIndex >= 0 ? `Stop ${nextStopIndex + 1} of ${stops.length}` : 'En route'}
+                </Text>
+                <Text style={styles.progressPercentText}>{progressPercent}% traversed</Text>
+              </View>
+            </View>
+
             <Divider style={styles.divider} />
 
             {/* Real-time stats grid */}
             <View style={styles.statsGrid}>
               <View style={styles.statItem}>
                 <Text style={[styles.statValue, { color: BRAND.success }]}>
-                  {nextStopEtaText ?? '3m'}
+                  {nextStopEtaText ?? 'Arriving'}
                 </Text>
                 <Text style={styles.statLabel}>Next Stop</Text>
               </View>
@@ -202,6 +314,13 @@ export default function BusDetailsScreen({ route, navigation }: any) {
             </View>
             <Divider style={styles.divider} />
             <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Current Coordinates</Text>
+              <Text style={[styles.infoValue, { fontSize: 12, color: BRAND.primary }]}>
+                {bus.lat && bus.lng ? `${bus.lat.toFixed(4)}° N, ${bus.lng.toFixed(4)}° E` : 'Acquiring GPS…'}
+              </Text>
+            </View>
+            <Divider style={styles.divider} />
+            <View style={styles.infoRow}>
               <Text style={styles.infoLabel}>Operating Depot</Text>
               <Text style={styles.infoValue}>{service.depot}</Text>
             </View>
@@ -209,7 +328,7 @@ export default function BusDetailsScreen({ route, navigation }: any) {
             <View style={styles.infoRow}>
               <Text style={styles.infoLabel}>Seating Capacity</Text>
               <Text style={styles.infoValue}>
-                {bus.occupancy_count ?? 18} / {bus.capacity || 50} Passengers ({50 - (bus.occupancy_count ?? 18)} seats free)
+                {bus.occupancy_count ?? 18} / {bus.capacity || 50} Passengers ({Math.max(0, 50 - (bus.occupancy_count ?? 18))} seats free)
               </Text>
             </View>
             <Divider style={styles.divider} />
@@ -226,7 +345,12 @@ export default function BusDetailsScreen({ route, navigation }: any) {
 
         {/* Route Progression Timeline */}
         <Card style={styles.stopsCard}>
-          <Card.Title title="Live Stop Progression Timeline" titleStyle={styles.cardTitle} />
+          <Card.Title
+            title="Live Stop Progression Timeline"
+            subtitle="Updates in real-time as bus advances"
+            titleStyle={styles.cardTitle}
+            subtitleStyle={styles.cardSubtitle}
+          />
           <Divider />
           <Card.Content>
             {loadingStops ? (
@@ -240,9 +364,15 @@ export default function BusDetailsScreen({ route, navigation }: any) {
                 const isNext = nextStopIndex >= 0 && idx === nextStopIndex;
                 const etaText = formatEta(liveEta);
 
+                // Distance from bus GPS to this stop
+                const distToStop =
+                  bus.lat && bus.lng && stop.latitude && stop.longitude
+                    ? calculateDistance(bus.lat, bus.lng, Number(stop.latitude), Number(stop.longitude))
+                    : null;
+
                 return (
                   <View key={stop.stop_id || idx}>
-                    <View style={styles.stopItem}>
+                    <View style={[styles.stopItem, isNext && styles.stopItemNext]}>
                       <View
                         style={[
                           styles.stopDot,
@@ -253,15 +383,15 @@ export default function BusDetailsScreen({ route, navigation }: any) {
                         <Text style={styles.stopDotNum}>{isPassed ? '✓' : idx + 1}</Text>
                       </View>
                       <View style={styles.stopInfo}>
-                        <Text style={[styles.stopName, isPassed && styles.stopNamePassed]}>
+                        <Text style={[styles.stopName, isPassed && styles.stopNamePassed, isNext && styles.stopNameNext]}>
                           {stop.stop_name}
                         </Text>
-                        <Text style={styles.stopDistance}>
+                        <Text style={[styles.stopDistance, isNext && styles.stopDistanceNext]}>
                           {isNext
-                            ? '🟢 Approaching Next'
+                            ? `🟢 Approaching Next ${distToStop ? `(${distToStop.text})` : ''}`
                             : isPassed
                             ? '✓ Departed'
-                            : `Stop ${stop.stop_order || idx + 1}`}
+                            : `Stop ${stop.stop_order || idx + 1}${distToStop ? ` · ${distToStop.text}` : ''}`}
                         </Text>
                       </View>
 
@@ -335,10 +465,43 @@ const styles = StyleSheet.create({
     borderRadius: BRAND.radius.xl,
     ...BRAND.shadowLg,
   },
+  liveStatusRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  liveBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0FDF4',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: BRAND.radius.pill,
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    gap: 6,
+  },
+  liveDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+  },
+  liveBadgeText: {
+    fontSize: 9.5,
+    fontWeight: '900',
+    color: '#15803D',
+    letterSpacing: 0.4,
+  },
+  liveSpeedBadge: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: BRAND.textSecondary,
+  },
   headerTop: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 10,
     gap: 10,
   },
   badgeLarge: {
@@ -384,6 +547,63 @@ const styles = StyleSheet.create({
     color: BRAND.primary,
     fontWeight: '800',
   },
+  currentTransitBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderLeftWidth: 3.5,
+    borderLeftColor: BRAND.primary,
+    borderRadius: BRAND.radius.md,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginVertical: 8,
+    gap: 10,
+  },
+  currentTransitIcon: {
+    fontSize: 20,
+  },
+  currentTransitTextCol: {
+    flex: 1,
+  },
+  currentTransitTitle: {
+    fontSize: 12.5,
+    fontWeight: '800',
+    color: BRAND.text,
+  },
+  currentTransitSub: {
+    fontSize: 10.5,
+    fontWeight: '600',
+    color: BRAND.textSecondary,
+    marginTop: 1,
+  },
+  progressContainer: {
+    marginVertical: 6,
+  },
+  progressBarWrap: {
+    height: 6,
+    backgroundColor: '#E2E8F0',
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  progressLabelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 4,
+  },
+  progressLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: BRAND.textSecondary,
+  },
+  progressPercentText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: BRAND.primary,
+  },
   divider: {
     marginVertical: 10,
   },
@@ -421,6 +641,12 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: BRAND.text,
   },
+  cardSubtitle: {
+    fontSize: 11,
+    color: BRAND.textSecondary,
+    fontWeight: '600',
+    marginTop: -4,
+  },
   infoRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -456,6 +682,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 10,
     gap: 12,
+    borderRadius: BRAND.radius.md,
+  },
+  stopItemNext: {
+    backgroundColor: 'rgba(37, 99, 235, 0.05)',
+    paddingHorizontal: 6,
   },
   stopDot: {
     width: 22,
@@ -478,10 +709,18 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: BRAND.text,
   },
+  stopNameNext: {
+    fontWeight: '900',
+    color: BRAND.primary,
+  },
   stopDistance: {
     fontSize: 11,
     color: BRAND.textSecondary,
     marginTop: 1,
+  },
+  stopDistanceNext: {
+    color: '#15803D',
+    fontWeight: '700',
   },
   stopDotPassed: { backgroundColor: '#CBD5E1' },
   stopDotNext: { backgroundColor: BRAND.success },
